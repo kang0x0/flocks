@@ -1,0 +1,58 @@
+{
+  "title": "Cairn Projects",
+  "description": "Blackboard-based multi-agent collaboration",
+  "empty": {
+    "title": "No projects",
+    "description": "Create your first Cairn project to start multi-agent collaboration experiments. Cairn uses a blackboard architecture where multiple agents write shared facts, propose hints, and take on subtasks to collaboratively reason and divide work. Fill in an origin, goal, and optional hints to define the task; the system coordinates workflows and maintains an auditable decision record."
+  },
+  "confirm": {
+    "deleteTitle": "Delete project",
+    "deleteDescription": "Are you sure you want to delete this Cairn project? This action cannot be undone.",
+    "deleteConfirm": "Delete",
+    "deleteCancel": "Cancel"
+  },
+  "errors": {
+    "missingFields": "Please fill title, origin and goal.",
+    "createFailed": "Failed to create project"
+    ,"deleteFailed": "Failed to delete project"
+  },
+  "create": {
+    "open": "New Project",
+    "title": "Create Cairn Project",
+    "subtitle": "Provide a title, origin, goal, and optional initial hints."
+  },
+  "form": {
+    "titleLabel": "Project name",
+    "goalLabel": "Goal",
+    "originLabel": "Origin",
+    "hintsLabel": "Initial Hints",
+    "titlePlaceholder": "e.g. Analyze autonomous driving collision causes",
+    "goalPlaceholder": "Describe the goal you want to achieve",
+    "originPlaceholder": "Describe initial facts or assumptions",
+    "hintsPlaceholder": "One hint per line, e.g. 'check budget', 'consider security controls'",
+    "hintsHelp": "Hints are optional; one per line to help bootstrap collaboration.",
+    "creating": "Creating…"
+  },
+  "buttons": {
+    "refresh": "Refresh",
+    "create": "Create Project",
+    "cancel": "Cancel",
+    "delete": "Delete",
+    "viewDetails": "View details →",
+    "backToList": "Back to projects"
+  }
+  ,
+  "stats": {
+    "fact": "Facts:",
+    "intent": "Intents:",
+    "working": "In progress:",
+    "unclaimed": "Unclaimed:",
+    "hints": "Hints:",
+    "trigger": "Trigger:",
+    "noIntents": "No intents created yet.",
+    "noHints": "No hints available.",
+    "from": "from",
+    "to": "to",
+    "idPrefix": "ID:"
+  }
+}

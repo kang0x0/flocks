@@ -1,0 +1,83 @@
+{
+  "name": "cairn_base",
+  "description": "Universal Cairn Meta-Workflow Engine. Bootstrap → Reason↔Explore loop → Finalize. Adaptable to any security scenario by changing origin/goal/success_criteria.",
+  "start": "bootstrap",
+  "nodes": [
+    {
+      "id": "bootstrap",
+      "type": "python",
+      "name": "Cairn Bootstrap",
+      "description": "Initialize the Cairn blackboard with origin, goal, success_criteria. Extract initial facts from origin data.",
+      "code": "import json\nimport datetime\n\norigin = inputs.get(\"origin\", {})\ngoal = inputs.get(\"goal\", \"\")\nsuccess_criteria = inputs.get(\"success_criteria\", [])\nmax_iterations = int(inputs.get(\"max_iterations\", 20))\nscenario_hints = str(inputs.get(\"scenario_hints\", \"\") or \"\")\n\nif not isinstance(origin, dict):\n    origin = {\"raw\": str(origin)}\nif not isinstance(goal, str):\n    goal = str(goal) if goal else \"\"\nif not isinstance(success_criteria, list):\n    success_criteria = [str(success_criteria)] if success_criteria else []\n\n# Build initial facts from origin\ndesc = origin.get(\"description\", origin.get(\"raw\", \"\"))\npayload = origin.get(\"data_payload\", {})\ninitial_facts = []\nif desc:\n    initial_facts.append({\n        \"id\": \"fact_origin\",\n        \"type\": \"origin\",\n        \"content\": desc,\n        \"confidence\": 1.0,\n        \"source\": \"user_input\"\n    })\nif payload:\n    for k, v in payload.items():\n        initial_facts.append({\n            \"id\": f\"fact_payload_{k}\",\n            \"type\": k,\n            \"content\": str(v),\n            \"confidence\": 0.9,\n            \"source\": \"origin_payload\"\n        })\n\noutputs[\"origin\"] = origin\noutputs[\"goal\"] = goal\noutputs[\"success_criteria\"] = success_criteria\noutputs[\"facts\"] = initial_facts\noutputs[\"intents\"] = []\noutputs[\"completed_intents\"] = []\noutputs[\"iteration\"] = 0\noutputs[\"max_iterations\"] = max_iterations\noutputs[\"final_conclusion\"] = \"\"\noutputs[\"action_summary\"] = \"\"\noutputs[\"scenario_hints\"] = scenario_hints\noutputs[\"no_progress_count\"] = 0\noutputs[\"should_continue\"] = \"continue\"\n\n# Log startup\nprint(f\"[Cairn] Bootstrap: origin={desc[:100] if desc else '(empty)'}, goal={goal[:100] if goal else '(empty)'}\")\nprint(f\"[Cairn] Success criteria: {success_criteria}\")\nprint(f\"[Cairn] Max iterations: {max_iterations}\")"
+    },
+    {
+      "id": "loop_check",
+      "type": "loop",
+      "name": "Loop Check",
+      "select_key": "should_continue",
+      "description": "Check should_continue: continue → run another cycle, exit → finalize"
+    },
+    {
+      "id": "cairn_cycle",
+      "type": "logic",
+      "name": "Cairn Reason↔Explore Cycle",
+      "description": "## 角色\n你是 Cairn Reasoning & Execution Engine。你的工作是在循环中观察黑板状态，决定是 \"Reason\" 还是 \"Explore\"。\n\n## 输入数据\n- origin: 任务起点\n- goal: 最终目标描述\n- success_criteria: 成功判断标准列表\n- facts: 已确认事实列表（list[dict]，每个有 id/type/content/confidence/source）\n- intents: 待执行意图列表（list[dict]）\n- completed_intents: 已完成意图列表（list[dict]）\n- iteration: 当前迭代次数\n- max_iterations: 最大迭代次数\n- no_progress_count: 连续无新事实计数\n- scenario_hints: 场景提示字符串\n\n## 决策逻辑\n\n### 模式 1 — EXPLORE（有待执行意图时）\n当 len(intents) > 0 时：\n1. 取出 intents[0] 作为 current_intent\n2. 根据 current_intent.required_tool_category（如 \"threat_intel\", \"port_scanner\", \"log_query\"）和 target 字段，调用合适的 tool.run(...)\n3. 调用 llm.ask() 分析工具的输出，提取结构化事实\n4. 将新事实追加到 facts，current_intent 移入 completed_intents（标记 status=\"done\" 或 \"failed\"）\n5. 重置 no_progress_count = 0\n6. 设置 should_continue = \"continue\"\n\n### 模式 2 — REASON（无待执行意图时）\n当 len(intents) == 0 时：\n1. 用 llm.ask() 进行推理分析。构造 prompt 包含：所有 facts、goal、success_criteria\n2. 要求 LLM 严格按 JSON 格式输出：\n```json\n{\n  \"assessment\": \"对当前状态的评估\",\n  \"goal_met\": true/false,\n  \"gaps\": [\"缺失信息1\", \"缺失信息2\"],\n  \"new_intents\": [\n    {\n      \"description\": \"下一步做什么\",\n      \"required_tool_category\": \"工具类别\",\n      \"target\": \"目标对象\",\n      \"priority\": \"high/medium/low\",\n      \"rationale\": \"为什么要做这个\"\n    }\n  ]\n}\n```\n3. 解析 LLM 输出：\n   - 如果 goal_met == true → should_continue = \"exit\"，写入 final_conclusion\n   - 否则将 new_intents 放入 intents\n4. 如果 goal_met false 但 LLM 没有生成任何 intent → no_progress_count += 1\n\n### 边界条件\n- iteration >= max_iterations → should_continue = \"exit\"，final_conclusion = \"达到最大迭代次数\"\n- no_progress_count >= 3 → should_continue = \"exit\"，final_conclusion = \"连续3轮无进展，收敛检查失败\"\n- 工具调用失败 → intent 标记 failed，不阻塞继续\n- 系统工具如 \"threatbook_mcp_*\", \"web_search\", \"webfetch\" 均可用于情报收集\n\n### 工具选择指南\n常用工具映射（根据 intent.required_tool_category）：\n- \"threat_intel\" / \"threatbook\" / \"ip\" → threatbook_mcp_ip_query(target=target)\n- \"domain\" → threatbook_mcp_domain_query(domain=target)\n- \"hash\" / \"file\" / \"malware\" → threatbook_mcp_hash_query(hash=target)\n- \"web\" / \"search\" → web_search(query=target)\n- \"port_scan\" / \"service_detection\" / \"network_recon\" → 提示用户需要端口扫描能力\n- \"log_analysis\" / \"internal_recon\" → 提示用户需要日志查询能力\n- 如果匹配不到精确工具：用 web_search 作为兜底搜索\n\n## 输出约束\n必须设置以下 outputs（全部必须赋值，不能留 None）：\n- should_continue: \"continue\" 或 \"exit\"\n- facts: 更新后的完整事实列表\n- intents: 更新后的待执行列表\n- completed_intents: 更新后的已完成列表\n- iteration: 当前迭代次数（不做自增，自增在 advance 节点完成）\n- final_conclusion: 如果完成则写入总结，否则 \"\"\n- action_summary: 本次循环执行的简短描述（最多200字）\n- no_progress_count: 更新后的无进展计数\n\n注意：不能使用 async/await 语法。所有代码必须在顶层 exec 中同步执行。"
+    },
+    {
+      "id": "advance",
+      "type": "python",
+      "name": "Advance Iteration",
+      "description": "Increment iteration counter.",
+      "code": "iteration = int(inputs.get(\"iteration\", 0)) + 1\nmax_iterations = int(inputs.get(\"max_iterations\", 20))\n\noutputs[\"iteration\"] = iteration\noutputs[\"should_continue\"] = \"exit\" if iteration >= max_iterations else inputs.get(\"should_continue\", \"continue\")\n\n# Pass through unchanged fields\nfor key in [\"origin\", \"goal\", \"success_criteria\", \"facts\", \"intents\", \"completed_intents\",\n            \"final_conclusion\", \"action_summary\", \"scenario_hints\", \"no_progress_count\"]:\n    outputs[key] = inputs.get(key, [] if key in (\"facts\", \"intents\", \"completed_intents\", \"success_criteria\") else {} if key == \"origin\" else \"\")\n\nprint(f\"[Cairn] Cycle {iteration}/{max_iterations} complete. Intent pool: {len(outputs['intents'])} pending, {len(outputs['completed_intents'])} done. Facts: {len(outputs['facts'])}\")"
+    },
+    {
+      "id": "finalize",
+      "type": "llm",
+      "name": "Generate Final Report",
+      "prompt": "你是 Cairn 工作流最终报告生成器。\n\n根据以下上下文生成一份结构化、可读性强的中文报告。\n\n## 任务目标\n{{ goal }}\n\n## 起始点\n{{ origin }}\n\n## 成功标准\n{{ success_criteria }}\n\n## 事实列表（已收集的证据）\n{% for f in facts %}\n- ID: {{ f.id }} | 类型: {{ f.type }} | 置信度: {{ f.confidence }} | 来源: {{ f.source }}\n  内容: {{ f.content }}\n{% endfor %}\n\n## 已完成的操作\n{% for ci in completed_intents %}\n- {{ ci.description }} ({{ ci.status if ci is mapping and ci.status is defined else \"done\" }})\n{% endfor %}\n\n## 最终结论\n{{ final_conclusion }}\n\n## 总执行次数\n{{ iteration }} 轮\n\n---\n请生成报告，包含以下章节：\n1. **执行摘要** — 一句话总结结果\n2. **任务概况** — 目标描述、范围\n3. **发现详情** — 所有事实的分类归纳\n4. **执行轨迹** — 做了哪些操作\n5. **结论** — 最终判定\n6. **建议** — 下一步行动项",
+      "output_key": "final_report",
+      "model": ""
+    }
+  ],
+  "edges": [
+    {
+      "from": "bootstrap",
+      "to": "loop_check",
+      "order": 0
+    },
+    {
+      "from": "loop_check",
+      "to": "cairn_cycle",
+      "label": "continue",
+      "order": 0
+    },
+    {
+      "from": "loop_check",
+      "to": "finalize",
+      "label": "exit",
+      "order": 1
+    },
+    {
+      "from": "cairn_cycle",
+      "to": "advance",
+      "order": 0
+    },
+    {
+      "from": "advance",
+      "to": "loop_check",
+      "order": 0
+    }
+  ],
+  "metadata": {
+    "node_timeout_s": 600,
+    "sampleInputs": {
+      "origin": {
+        "description": "可选的调查起点描述",
+        "data_payload": {}
+      },
+      "goal": "最终目标描述",
+      "success_criteria": ["标准1", "标准2"],
+      "max_iterations": 20
+    }
+  }
+}

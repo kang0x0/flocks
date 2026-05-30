@@ -33,6 +33,8 @@ const MonitoringPage = lazy(() => import('@/pages/Monitoring'));
 const WorkspacePage = lazy(() => import('@/pages/Workspace'));
 const DeviceIntegrationPage = lazy(() => import('@/pages/DeviceIntegration'));
 const SystemLogPage = lazy(() => import('@/pages/SystemLog'));
+const CairnProjectsPage = lazy(() => import('@/pages/CairnProjects'));
+const CairnProjectDetailPage = lazy(() => import('../pages/CairnProjects/Detail'));
 
 function LazyRoute({ children }: { children: React.ReactNode }) {
   return (
@@ -136,6 +138,10 @@ export function Routes() {
         <Route path="permissions" element={<LazyRoute><PermissionPage /></LazyRoute>} />
         <Route path="monitoring" element={<LazyRoute><MonitoringPage /></LazyRoute>} />
         <Route path="admin/users" element={<Navigate to="/config" replace />} />
+        
+        {/* Cairn: Blackboard-based multi-agent collaboration */}
+        <Route path="cairn" element={<LazyRoute><CairnProjectsPage /></LazyRoute>} />
+        <Route path="cairn/:id" element={<LazyRoute><CairnProjectDetailPage /></LazyRoute>} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </RouterRoutes>

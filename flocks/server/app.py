@@ -912,6 +912,8 @@ from flocks.server.routes.auth import router as auth_router
 from flocks.server.routes.admin_users import router as admin_users_router
 from flocks.server.routes.notifications import router as notifications_router
 from flocks.server.routes.device import router as device_router
+# Cairn: Blackboard-based multi-agent collaboration protocol
+from flocks.server.routes.cairn import router as cairn_router
 # Original routes with /api/ prefix
 app.include_router(health_router, prefix="/api", tags=["Health"])
 app.include_router(session_router, prefix="/api/session", tags=["Session"])
@@ -970,68 +972,8 @@ app.include_router(notifications_router, prefix="/api/notifications", tags=["Not
 # Device integration (named instances, SQL-backed)
 app.include_router(device_router, prefix="/api/devices", tags=["Device"])
 
-# ============================================================
-# TUI Compatible Routes (without /api/ prefix)
-# These routes are needed for TUI client compatibility
-# ============================================================
-
-# Global routes (/global/*)
-app.include_router(global_router, prefix="/global", tags=["Global"])
-
-# Event routes (/event)
-app.include_router(event_router, prefix="/event", tags=["Event"])
-
-# Session routes (/session/*)
-app.include_router(session_router, prefix="/session", tags=["Session"])
-
-# Provider routes (/provider/*)
-app.include_router(provider_router, prefix="/provider", tags=["Provider"])
-
-# Config routes (/config/*)
-app.include_router(config_router, prefix="/config", tags=["Config"])
-
-# Project routes (/project/*)
-app.include_router(project_router, prefix="/project", tags=["Project"])
-
-# File routes (/file/*)
-app.include_router(file_router, prefix="/file", tags=["File"])
-
-# MCP routes (/mcp/*)
-app.include_router(mcp_router, prefix="/mcp", tags=["MCP"])
-
-# Agent routes (/agent/* and /app/agent for TUI)
-app.include_router(agent_router, prefix="/agent", tags=["Agent"])
-app.include_router(agent_router, prefix="/app/agent", tags=["App-Agent"])
-
-# PTY routes (/pty/*)
-app.include_router(pty_router, prefix="/pty", tags=["PTY"])
-
-# LSP routes (/lsp/*)
-app.include_router(lsp_router, prefix="/lsp", tags=["LSP"])
-
-# Path routes (/path)
-app.include_router(path_router, prefix="/path", tags=["Path"])
-
-# VCS routes (/vcs)
-app.include_router(vcs_router, prefix="/vcs", tags=["VCS"])
-
-# Find routes (/find/*)
-app.include_router(find_router, prefix="/find", tags=["Find"])
-
-# Misc routes (various endpoints needed by TUI)
-app.include_router(misc_router, tags=["Misc"])
-
-# Permission routes (/permission)
-app.include_router(permission_router, prefix="/permission", tags=["Permission"])
-
-# Question routes (/question)
-app.include_router(question_router, prefix="/question", tags=["Question"])
-
-# TUI control routes (/tui/*)
-app.include_router(tui_router, prefix="/tui", tags=["TUI"])
-app.include_router(auth_router, prefix="/auth", tags=["Auth"])
-app.include_router(admin_users_router, prefix="/admin", tags=["Admin"])
-
+# Cairn: Blackboard-based multi-agent collaboration protocol
+app.include_router(cairn_router, tags=["Cairn"])
 
 @app.get("/", tags=["Root"])
 async def root():

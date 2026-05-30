@@ -20,6 +20,7 @@ import {
   Archive,
   ServerCog,
   ScrollText,
+  GitBranch,
 } from 'lucide-react';
 import { useState, useEffect, useLayoutEffect, useCallback, useMemo, useRef, lazy, Suspense } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -314,6 +315,7 @@ export default function Layout() {
           { name: t('workspace'), href: '/workspace', icon: FolderOpen },
           { name: t('tasks'), href: '/tasks', icon: ListTodo },
           { name: t('workflows'), href: '/workflows', icon: Workflow },
+          { name: 'Cairn Projects', href: '/cairn', icon: GitBranch },
         ],
       },
       {

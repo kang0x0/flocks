@@ -21,6 +21,7 @@ import enUpdate from './locales/en-US/update.json';
 import enWorkspace from './locales/en-US/workspace.json';
 import enAuth from './locales/en-US/auth.json';
 import enNotification from './locales/en-US/notification.json';
+import enCairn from './locales/en-US/cairn.json';
 
 import zhCommon from './locales/zh-CN/common.json';
 import zhNav from './locales/zh-CN/nav.json';
@@ -41,6 +42,7 @@ import zhUpdate from './locales/zh-CN/update.json';
 import zhWorkspace from './locales/zh-CN/workspace.json';
 import zhAuth from './locales/zh-CN/auth.json';
 import zhNotification from './locales/zh-CN/notification.json';
+import zhCairn from './locales/zh-CN/cairn.json';
 
 i18n
   .use(LanguageDetector)
@@ -67,6 +69,7 @@ i18n
         workspace: enWorkspace,
         auth: enAuth,
         notification: enNotification,
+        cairn: enCairn,
       },
       'zh-CN': {
         common: zhCommon,
@@ -88,11 +91,12 @@ i18n
         workspace: zhWorkspace,
         auth: zhAuth,
         notification: zhNotification,
+        cairn: zhCairn,
       },
     },
     fallbackLng: 'en-US',
     defaultNS: 'common',
-    ns: ['common', 'nav', 'home', 'session', 'agent', 'task', 'workflow', 'tool', 'skill', 'model', 'mcp', 'config', 'channel', 'permission', 'monitoring', 'update', 'workspace', 'auth', 'notification'],
+    ns: ['common', 'nav', 'home', 'session', 'agent', 'task', 'workflow', 'tool', 'skill', 'model', 'mcp', 'config', 'channel', 'permission', 'monitoring', 'update', 'workspace', 'auth', 'notification', 'cairn'],
     detection: {
       order: ['localStorage', 'navigator'],
       lookupLocalStorage: 'flocks-language',

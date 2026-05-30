@@ -134,3 +134,5 @@ changelog.md
 # Integration tests with real host credentials (not for commit)
 tests/integration_ssh_*.py
 .cursor
+
+workspace/

@@ -1,0 +1,88 @@
+{
+  "name": "cairn",
+  "description": "Cairn Security Incident Investigation Workflow. Bootstrap → Reason↔Explore loop → Finalize. For cross-device alert triage, threat hunting, and breach investigation.",
+  "start": "bootstrap",
+  "nodes": [
+    {
+      "id": "bootstrap",
+      "type": "python",
+      "name": "Incident Bootstrap",
+      "description": "Initialize Cairn blackboard for security incident investigation. Extract alert/IP/host/IOCs from origin.",
+      "code": "import json\n\norigin = inputs.get(\"origin\", {})\nif isinstance(origin, str):\n    origin = {\"description\": origin}\nif not isinstance(origin, dict):\n    origin = {\"description\": str(origin)}\n\ngoal = inputs.get(\"goal\", \"\") or \"判断是否为真实安全事件，识别攻击路径，提供应急处置建议\"\nsuccess_criteria = inputs.get(\"success_criteria\", [])\nif not success_criteria:\n    success_criteria = [\"攻击者身份/来源已确认\", \"横向移动路径已映射\", \"受影响资产已识别\", \"应急处置建议已给出\"]\n\nmax_iterations = int(inputs.get(\"max_iterations\", 25))\n\ndesc = origin.get(\"description\", \"\")\npayload = origin.get(\"data_payload\", {})\n\ninitial_facts = []\nif desc:\n    initial_facts.append({\n        \"id\": \"fact_origin\",\n        \"type\": \"alert_description\",\n        \"content\": desc,\n        \"confidence\": 1.0,\n        \"source\": \"user_input\"\n    })\n\n# Extract known fields from payload\nfor field in [\"alert_id\", \"src_ip\", \"dst_ip\", \"host\", \"domain\", \"hash\", \"url\", \"rule\", \"severity\"]:\n    val = payload.get(field) or origin.get(field)\n    if val:\n        initial_facts.append({\n            \"id\": f\"fact_{field}\",\n            \"type\": field,\n            \"content\": str(val),\n            \"confidence\": 0.9,\n            \"source\": \"alert_payload\"\n        })\n\n# Seed initial intents from available IOCs\ninitial_intents = []\npending_targets = set()\nfor f in initial_facts:\n    if f[\"type\"] in (\"src_ip\", \"dst_ip\", \"ip\"):\n        k = (\"ip\", f[\"content\"])\n        if k not in pending_targets:\n            pending_targets.add(k)\n            initial_intents.append({\n                \"id\": f\"intent_ip_{len(initial_intents)}\",\n                \"description\": f\"查询 IP {f['content']} 威胁情报\",\n                \"required_tool_category\": \"threat_intel\",\n                \"target\": f[\"content\"],\n                \"priority\": \"high\",\n                \"rationale\": \"确认攻击来源地、运营商和历史恶意行为\",\n                \"status\": \"pending\"\n            })\n    elif f[\"type\"] in (\"domain\",):\n        k = (\"domain\", f[\"content\"])\n        if k not in pending_targets:\n            pending_targets.add(k)\n            initial_intents.append({\n                \"id\": f\"intent_domain_{len(initial_intents)}\",\n                \"description\": f\"查询域名 {f['content']} 情报\",\n                \"required_tool_category\": \"domain\",\n                \"target\": f[\"content\"],\n                \"priority\": \"high\",\n                \"rationale\": \"判断域名是否为恶意/钓鱼/ C2\",\n                \"status\": \"pending\"\n            })\n    elif f[\"type\"] in (\"hash\",):\n        initial_intents.append({\n            \"id\": f\"intent_hash_{len(initial_intents)}\",\n            \"description\": f\"查询文件 Hash {f['content']} 检测结果\",\n            \"required_tool_category\": \"hash\",\n            \"target\": f[\"content\"],\n            \"priority\": \"high\",\n            \"rationale\": \"判断文件是否为已知恶意软件\",\n            \"status\": \"pending\"\n        })\n\noutputs[\"origin\"] = origin\noutputs[\"goal\"] = goal\noutputs[\"success_criteria\"] = success_criteria\noutputs[\"facts\"] = initial_facts\noutputs[\"intents\"] = initial_intents\noutputs[\"completed_intents\"] = []\noutputs[\"iteration\"] = 0\noutputs[\"max_iterations\"] = max_iterations\noutputs[\"final_conclusion\"] = \"\"\noutputs[\"action_summary\"] = \"\"\noutputs[\"no_progress_count\"] = 0\noutputs[\"scenario_hints\"] = \"incident_response\"\noutputs[\"should_continue\"] = \"continue\"\n\nprint(f\"[Cairn/IR] Bootstrap: {desc[:120] if desc else 'from payload fields'}\")\nprint(f\"[Cairn/IR] Initial intents: {len(initial_intents)}, facts: {len(initial_facts)}\")"
+    },
+    {
+      "id": "loop_check",
+      "type": "loop",
+      "name": "Loop Check",
+      "select_key": "should_continue",
+      "description": "Check should_continue: continue → run another cycle, exit → finalize"
+    },
+    {
+      "id": "cairn_cycle",
+      "type": "logic",
+      "name": "Incident Investigation Cycle",
+      "description": "## 角色\n你是 Cairn 安全事件调查引擎。每次循环中：优先执行待处理 Intent（情报查询/证据收集），无时则推理下一步调查方向。\n\n## 输入\n- facts: 已发现的证据列表\n- intents: 待执行意图\n- completed_intents: 已完成\n- iteration / max_iterations / no_progress_count\n- goal / success_criteria（确认是否为真实入侵）\n- origin 原始告警上下文\n\n## 调查方法论\n遵循网络安全调查的标准化流程：\n1. 情报查询（TI）— 查询外部 IP/域名/Hash 的基础情报\n2. 证据关联 — 将新情报与已有 facts 关联，构建攻击链\n3. 推理扩展 — 根据关联结果提出新方向（如“IP 关联的其他样本”、“域名的历史解析”）\n4. 收敛判断 — 判断攻击链是否完整，是否需要应急响应\n\n### Phase A — EXPLORE（有意图时）\n1. 取 intents[0]\n2. 调用对应 tool.run(...)：\n   - \"threat_intel\" / IP → threatbook_mcp_ip_query(ip=target)\n   - \"domain\" → threatbook_mcp_domain_query(domain=target)\n   - \"hash\" → threatbook_mcp_hash_query(hash=target)\n   - \"web_search\" / \"search\" → web_search(query=target)\n   - \"web_browsing\" → threatbook_mcp_web_browsing(url=target)\n3. 用 llm.ask() 分析结果，提取事实和关联关系\n4. 追加到 facts，intent 标记 done\n\n### Phase B — REASON（无意图时）\n1. 用 llm.ask() 分析所有 facts 和调查进展\n2. 要求输出 JSON：\n```json\n{\n  \"assessment\": \"当前调查状态\",\n  \"attack_path_found\": true/false,\n  \"conclusive\": true/false,\n  \"new_investigations\": [\n    {\"description\": \"下一步调查\", \"category\": \"threat_intel/domain/hash/web_search/web_browsing\", \"target\": \"对象\", \"rationale\": \"原因\"}\n  ]\n}\n```\n3. 如果 conclusive == true → should_continue = \"exit\"，写 final_conclusion\n4. 否则 new_investigations 转 intents\n\n### 收敛条件\n- conclusive == true（攻击链清晰、证据充分）\n- iteration >= max_iterations\n- no_progress_count >= 3\n\n### 工具提示\n- threatbook_mcp_* 系列工具可用于深度情报\n- web_search 可用于搜索最新安全事件和报告\n- threatbook_mcp_web_browsing 可抓取网页内容深入分析\n\n## 输出约束\n必须设置：should_continue, facts, intents, completed_intents, iteration(透传), final_conclusion, action_summary, no_progress_count\n\n注意：禁止 async/await。所有代码在顶层 exec 同步执行。"
+    },
+    {
+      "id": "advance",
+      "type": "python",
+      "name": "Advance Iteration",
+      "description": "Increment iteration for incident investigation.",
+      "code": "iteration = int(inputs.get(\"iteration\", 0)) + 1\nmax_iterations = int(inputs.get(\"max_iterations\", 25))\n\noutputs[\"iteration\"] = iteration\noutputs[\"should_continue\"] = \"exit\" if iteration >= max_iterations else inputs.get(\"should_continue\", \"continue\")\n\nfor key in [\"origin\", \"goal\", \"success_criteria\", \"facts\", \"intents\", \"completed_intents\",\n            \"final_conclusion\", \"action_summary\", \"scenario_hints\", \"no_progress_count\"]:\n    outputs[key] = inputs.get(key, [] if key in (\"facts\", \"intents\", \"completed_intents\", \"success_criteria\") else {} if key == \"origin\" else \"\")\n\nf_count = len(outputs[\"facts\"])\ni_count = len(outputs[\"intents\"])\nci_count = len(outputs[\"completed_intents\"])\nprint(f\"[Cairn/IR] Cycle {iteration}/{max_iterations}. Facts={f_count}, Pending=intents={i_count}, Done={ci_count}\")"
+    },
+    {
+      "id": "finalize",
+      "type": "llm",
+      "name": "Generate Incident Report",
+      "prompt": "你是 Cairn 安全事件调查报告生成器。根据以下调查结果生成结构化、可操作的事件报告。\n\n## 原始告警\n{{ origin }}\n\n## 调查目标\n{{ goal }}\n\n## 成功标准\n{{ success_criteria }}\n\n## 已收集证据\n{% for f in facts %}\n- [{{ f.type }}] {{ f.content }}\n  置信度: {{ f.confidence }} | 来源: {{ f.source }}\n{% endfor %}\n\n## 已执行操作\n{% for ci in completed_intents %}\n- {{ ci.description }}{% if ci.status is defined %} ({{ ci.status }}){% endif %}\n{% endfor %}\n\n## 执行轮次\n{{ iteration }} 轮\n\n## 最终结论\n{{ final_conclusion }}\n\n---\n请严格按照以下格式生成事件报告：\n\n# 安全事件调查报告\n\n## 1. 执行摘要\n- 事件类型判定\n- 风险等级（CRITICAL / HIGH / MEDIUM / LOW / INFORMATIONAL）\n- 关键结论\n\n## 2. 证据清单\n### 2.1 外部情报\n- IP / 域名 / Hash 情报结论\n- 恶意判定依据\n\n### 2.2 攻击链分析\n- 攻击入口\n- 横向移动路径\n- 数据外泄情况\n\n## 3. IOC 汇总\n| IOC 类型 | 值 | 情报结论 |\n\n## 4. 影响评估\n- 受影响资产\n- 潜在损失\n\n## 5. 应急处置建议\n- 紧急阻断\n- 主机隔离\n- 凭证轮换\n\n## 6. 长期加固建议",
+      "output_key": "final_report",
+      "model": ""
+    }
+  ],
+  "edges": [
+    {
+      "from": "bootstrap",
+      "to": "loop_check",
+      "order": 0
+    },
+    {
+      "from": "loop_check",
+      "to": "cairn_cycle",
+      "label": "continue",
+      "order": 0
+    },
+    {
+      "from": "loop_check",
+      "to": "finalize",
+      "label": "exit",
+      "order": 1
+    },
+    {
+      "from": "cairn_cycle",
+      "to": "advance",
+      "order": 0
+    },
+    {
+      "from": "advance",
+      "to": "loop_check",
+      "order": 0
+    }
+  ],
+  "metadata": {
+    "node_timeout_s": 900,
+    "sampleInputs": {
+      "origin": {
+        "description": "告警描述，如：检测到主机 10.0.0.5 对外 IP 1.2.3.4 发起异常 TLS 连接",
+        "data_payload": {
+          "alert_id": "ALERT-001",
+          "src_ip": "10.0.0.5",
+          "dst_ip": "1.2.3.4",
+          "severity": "high"
+        }
+      },
+      "goal": "判断是否为真实入侵并识别攻击路径",
+      "success_criteria": ["攻击者确认", "攻击路径映射", "应急建议给出"],
+      "max_iterations": 25
+    }
+  }
+}

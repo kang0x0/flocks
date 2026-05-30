@@ -1,0 +1,58 @@
+{
+  "title": "Cairn 项目",
+  "description": "基于黑板的多智能体协作",
+  "empty": {
+    "title": "暂无项目",
+    "description": "创建第一个 Cairn 项目，启动多智能体协作实验。Cairn 基于黑板（blackboard）架构，鼓励多个智能体通过写入共享事实、提出提示并承担子任务来协同推理与分工，从而更可靠地解决复杂推断任务。请填写起点、目标及可选提示以定义任务起点，系统会自动协调工作流并保留可追溯的决策记录。"
+  },
+  "confirm": {
+    "deleteTitle": "删除项目",
+    "deleteDescription": "确认删除该 Cairn 项目吗？此操作无法恢复。",
+    "deleteConfirm": "删除",
+    "deleteCancel": "取消"
+  },
+  "errors": {
+    "missingFields": "请填写项目标题、起点和目标。",
+    "createFailed": "创建项目失败"
+    ,"deleteFailed": "删除项目失败"
+  },
+  "create": {
+    "open": "新建项目",
+    "title": "创建 Cairn 项目",
+    "subtitle": "填写项目标题、起点、目标，并可添加初始提示。"
+  },
+  "form": {
+    "titleLabel": "项目名称",
+    "goalLabel": "目标",
+    "originLabel": "起点",
+    "hintsLabel": "初始提示",
+    "titlePlaceholder": "例如：分析自动驾驶碰撞原因",
+    "goalPlaceholder": "描述希望达到的目标",
+    "originPlaceholder": "描述项目的起始事实或假设",
+    "hintsPlaceholder": "每行一个提示，例如：'检查项目预算'、'考虑相关安全控制'",
+    "hintsHelp": "提示为可选输入，每行一个，帮助快速启动协作。",
+    "creating": "创建中…"
+  },
+  "buttons": {
+    "refresh": "刷新",
+    "create": "创建项目",
+    "cancel": "取消",
+    "delete": "删除",
+    "viewDetails": "查看详情 →",
+    "backToList": "返回项目列表"
+  }
+  ,
+  "stats": {
+    "fact": "事实：",
+    "intent": "意图：",
+    "working": "进行中：",
+    "unclaimed": "未认领：",
+    "hints": "提示：",
+    "trigger": "触发者：",
+    "noIntents": "尚未创建任何意图。",
+    "noHints": "暂无提示内容。",
+    "from": "来自",
+    "to": "指向",
+    "idPrefix": "ID:"
+  }
+}
