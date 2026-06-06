@@ -1,262 +1,255 @@
-"""
-Cairn data models.
+from __future__ import annotations
 
-Defines the core entities: Project, Fact, Intent, Hint, and ReasonLease.
-These models map to the SQLite database schema and API contracts.
+from typing import Literal
 
-Design principles:
-- Facts are immutable once created (append-only)
-- Intents track exploration progress through worker/heartbeat/concluded_at
-- Hints are external inputs that don't affect graph causality
-- ReasonLease is project-level coordination state (not part of the graph)
-"""
+from pydantic import BaseModel, Field, field_validator
 
-from datetime import datetime
-from typing import Any, Dict, List, Literal, Optional
 
-from pydantic import BaseModel, ConfigDict, Field
+class Settings(BaseModel):
+    intent_timeout: int = Field(ge=5)
+    reason_timeout: int = Field(ge=5)
 
 
 class Fact(BaseModel):
-    """A confirmed objective finding in the exploration graph."""
-    
-    model_config = ConfigDict(populate_by_name=True)
-    
-    id: str = Field(..., description="Fact ID: 'origin', 'goal', or system-generated like 'f001'")
-    project_id: str = Field(..., alias="projectID", description="Parent project ID")
-    description: str = Field(..., min_length=1, description="Objective fact description")
-    created_at: datetime = Field(default_factory=datetime.utcnow, alias="createdAt")
-    
-    def is_special(self) -> bool:
-        """Check if this is a special fact (origin or goal)."""
-        return self.id in ("origin", "goal")
-
-
-class Intent(BaseModel):
-    """An exploration direction from one or more Facts."""
-    
-    model_config = ConfigDict(populate_by_name=True)
-    
-    id: str = Field(..., description="Intent ID: 'i001', 'i002', etc.")
-    project_id: str = Field(..., alias="projectID", description="Parent project ID")
-    from_: List[str] = Field(..., alias="from", min_length=1, description="Source Fact IDs (hyperedge support)")
-    to: Optional[str] = Field(None, alias="to", description="Conclusion Fact ID (null means not concluded)")
-    description: str = Field(..., min_length=1, description="Intent description")
-    creator: str = Field(..., min_length=1, description="Who declared this intent (immutable)")
-    worker: Optional[str] = Field(None, description="Current worker handling this intent (null = unclaimed)")
-    last_heartbeat_at: Optional[datetime] = Field(None, alias="lastHeartbeatAt", description="Last heartbeat time")
-    created_at: datetime = Field(default_factory=datetime.utcnow, alias="createdAt")
-    concluded_at: Optional[datetime] = Field(None, alias="concludedAt", description="When this intent was concluded")
-    
-    @property
-    def is_concluded(self) -> bool:
-        """Check if this intent has been concluded."""
-        return self.to is not None and self.concluded_at is not None
-    
-    @property
-    def is_unclaimed(self) -> bool:
-        """Check if this intent is unclaimed (no worker assigned)."""
-        return self.worker is None and not self.is_concluded
-    
-    @property
-    def is_active(self) -> bool:
-        """Check if this intent is actively being worked on."""
-        return self.worker is not None and not self.is_concluded
-
-
-class Hint(BaseModel):
-    """External strategy suggestion (not part of the causal graph)."""
-    
-    model_config = ConfigDict(populate_by_name=True)
-    
-    id: str = Field(..., description="Hint ID: 'h001', 'h002', etc.")
-    project_id: str = Field(..., alias="projectID", description="Parent project ID")
-    content: str = Field(..., min_length=1, description="Hint content")
-    creator: str = Field(..., min_length=1, description="Who created this hint")
-    created_at: datetime = Field(default_factory=datetime.utcnow, alias="createdAt")
-
-
-class ReasonLease(BaseModel):
-    """Project-level coordination state for reason tasks."""
-    
-    model_config = ConfigDict(populate_by_name=True)
-    
-    worker: str = Field(..., min_length=1, description="Worker currently executing reason")
-    trigger: str = Field(..., min_length=1, description="What triggered this reason task")
-    started_at: datetime = Field(default_factory=datetime.utcnow, alias="startedAt")
-    last_heartbeat_at: datetime = Field(default_factory=datetime.utcnow, alias="lastHeartbeatAt")
-
-
-class Project(BaseModel):
-    """A Cairn problem-solving project."""
-    
-    model_config = ConfigDict(populate_by_name=True)
-    
-    id: str = Field(..., description="Project ID")
-    title: str = Field(..., min_length=1, description="Project title")
-    status: Literal["active", "stopped", "completed"] = Field(
-        default="active",
-        description="Project status"
-    )
-    origin_fact_id: str = Field(..., alias="originFactId", description="Origin fact ID (always 'origin')")
-    goal_fact_id: str = Field(..., alias="goalFactId", description="Goal fact ID (always 'goal')")
-    reason: Optional[ReasonLease] = Field(None, description="Current reason lease (null if none)")
-    created_at: datetime = Field(default_factory=datetime.utcnow, alias="createdAt")
-    updated_at: datetime = Field(default_factory=datetime.utcnow, alias="updatedAt")
-
-
-class ProjectDetail(BaseModel):
-    """Complete project data including facts, intents, and hints."""
-    
-    model_config = ConfigDict(populate_by_name=True)
-    
-    project: Project
-    facts: List[Fact]
-    intents: List[Intent]
-    hints: List[Hint]
-
-
-class ProjectSummary(BaseModel):
-    """Project summary for list view (without full graph data)."""
-    
-    model_config = ConfigDict(populate_by_name=True)
-    
-    id: str = Field(..., alias="id")
-    title: str = Field(..., alias="title")
-    status: Literal["active", "stopped", "completed"] = Field(..., alias="status")
-    created_at: datetime = Field(..., alias="createdAt")
-    reason: Optional[ReasonLease] = Field(None, alias="reason")
-    fact_count: int = Field(..., alias="factCount")
-    intent_count: int = Field(..., alias="intentCount")
-    working_intent_count: int = Field(..., alias="workingIntentCount")
-    unclaimed_intent_count: int = Field(..., alias="unclaimedIntentCount")
-    hint_count: int = Field(..., alias="hintCount")
-
-
-# =============================================================================
-# API Request/Response Models
-# =============================================================================
-
-class CreateProjectRequest(BaseModel):
-    """Request to create a new Cairn project."""
-    
-    model_config = ConfigDict(populate_by_name=True)
-    
-    title: str = Field(..., min_length=1, description="Project title")
-    origin: str = Field(..., min_length=1, description="Starting point description")
-    goal: str = Field(..., min_length=1, description="Goal description")
-    hints: Optional[List[Dict[str, str]]] = Field(
-        None,
-        description="Initial hints: [{'content': '...', 'creator': '...'}]"
-    )
-
-
-class CreateIntentRequest(BaseModel):
-    """Request to create a new intent."""
-    
-    model_config = ConfigDict(populate_by_name=True)
-    
-    from_: List[str] = Field(..., alias="from", min_length=1, description="Source Fact IDs")
-    description: str = Field(..., min_length=1, description="Intent description")
-    creator: str = Field(..., min_length=1, description="Who is declaring this intent")
-    worker: Optional[str] = Field(None, description="Worker to claim immediately (null or equal to creator)")
-
-
-class HeartbeatRequest(BaseModel):
-    """Request to heartbeat an intent or reason lease."""
-    
-    worker: str = Field(..., min_length=1, description="Worker identifier")
-
-
-class ConcludeIntentRequest(BaseModel):
-    """Request to conclude an intent with a new fact."""
-    
-    worker: str = Field(..., min_length=1, description="Worker producing the conclusion")
-    description: str = Field(..., min_length=1, description="New fact description")
-
-
-class CompleteProjectRequest(BaseModel):
-    """Request to mark a project as completed."""
-    
-    model_config = ConfigDict(populate_by_name=True)
-    
-    from_: List[str] = Field(..., alias="from", min_length=1, description="Facts that satisfy the goal")
-    description: str = Field(..., min_length=1, description="Completion description")
-    worker: str = Field(..., min_length=1, description="Worker declaring completion")
-
-
-class CreateHintRequest(BaseModel):
-    """Request to add a hint to a project."""
-    
-    content: str = Field(..., min_length=1, description="Hint content")
-    creator: str = Field(..., min_length=1, description="Hint author")
-
-
-class ClaimReasonRequest(BaseModel):
-    """Request to claim project-level reason lease."""
-    
-    worker: str = Field(..., min_length=1, description="Worker claiming the lease")
-    trigger: str = Field(..., min_length=1, description="What triggered this reason")
-
-
-class UpdateProjectTitleRequest(BaseModel):
-    """Request to update project title."""
-    
-    title: str = Field(..., min_length=1, description="New project title")
-
-
-class UpdateProjectStatusRequest(BaseModel):
-    """Request to update project status."""
-    
-    status: Literal["active", "stopped"] = Field(..., description="New status (cannot set to completed via this API)")
-
-
-class ReopenProjectRequest(BaseModel):
-    """Request to reopen a completed project."""
-    
-    description: str = Field(..., min_length=1, description="Feedback description (will be added as a new fact)")
-    creator: str = Field(..., min_length=1, description="Who is providing the feedback")
-
-
-# =============================================================================
-# Export Format Models
-# =============================================================================
-
-class ExportYamlFact(BaseModel):
-    """Fact representation in YAML export."""
-    
     id: str
     description: str
 
 
-class ExportYamlIntent(BaseModel):
-    """Intent representation in YAML export."""
-    
-    model_config = ConfigDict(populate_by_name=True)
-    
-    from_: List[str] = Field(..., alias="from")
-    to: Optional[str] = Field(None, alias="to")
+class Intent(BaseModel):
+    id: str
+    from_: list[str] = Field(alias="from")
+    to: str | None = None
     description: str
     creator: str
-    worker: Optional[str]
-    created_at: str = Field(..., alias="created_at")
-    concluded_at: Optional[str] = Field(None, alias="concluded_at")
+    worker: str | None = None
+    last_heartbeat_at: str | None = None
+    created_at: str
+    concluded_at: str | None = None
+
+    model_config = {"populate_by_name": True}
 
 
-class ExportYamlHint(BaseModel):
-    """Hint representation in YAML export."""
-    
+class Hint(BaseModel):
+    id: str
     content: str
     creator: str
-    created_at: str = Field(..., alias="created_at")
+    created_at: str
 
 
-class ExportYamlProject(BaseModel):
-    """Complete project export in YAML format."""
-    
-    model_config = ConfigDict(populate_by_name=True)
-    
-    project: Dict[str, Any]
-    facts: List[ExportYamlFact]
-    intents: List[ExportYamlIntent]
-    hints: List[ExportYamlHint]
+class ProjectReason(BaseModel):
+    worker: str
+    trigger: str
+    started_at: str
+    last_heartbeat_at: str
+
+
+class ProjectMeta(BaseModel):
+    id: str
+    title: str
+    status: Literal["active", "stopped", "completed"]
+    created_at: str
+    reason: ProjectReason | None = None
+
+
+class ProjectSummary(ProjectMeta):
+    fact_count: int
+    intent_count: int
+    working_intent_count: int
+    unclaimed_intent_count: int
+    hint_count: int
+
+
+class ProjectDetail(BaseModel):
+    project: ProjectMeta
+    facts: list[Fact]
+    intents: list[Intent]
+    hints: list[Hint]
+
+
+class CreateHintInline(BaseModel):
+    content: str
+    creator: str
+
+    @field_validator("content", "creator")
+    @classmethod
+    def validate_non_empty_text(cls, value: str) -> str:
+        text = value.strip()
+        if not text:
+            raise ValueError("must not be empty")
+        return text
+
+
+class CreateProjectRequest(BaseModel):
+    title: str
+    origin: str
+    goal: str
+    hints: list[CreateHintInline] | None = None
+
+    @field_validator("title", "origin", "goal")
+    @classmethod
+    def validate_non_empty_text(cls, value: str) -> str:
+        text = value.strip()
+        if not text:
+            raise ValueError("must not be empty")
+        return text
+
+
+class CreateHintRequest(BaseModel):
+    content: str
+    creator: str
+
+    @field_validator("content", "creator")
+    @classmethod
+    def validate_non_empty_text(cls, value: str) -> str:
+        text = value.strip()
+        if not text:
+            raise ValueError("must not be empty")
+        return text
+
+
+class CreateIntentRequest(BaseModel):
+    from_: list[str] = Field(alias="from", min_length=1)
+    description: str
+    creator: str
+    worker: str | None = None
+
+    model_config = {"populate_by_name": True}
+
+    @field_validator("description", "creator", "worker")
+    @classmethod
+    def validate_non_empty_text(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        text = value.strip()
+        if not text:
+            raise ValueError("must not be empty")
+        return text
+
+    @field_validator("from_")
+    @classmethod
+    def validate_fact_ids(cls, value: list[str]) -> list[str]:
+        cleaned = []
+        for item in value:
+            text = item.strip()
+            if not text:
+                raise ValueError("fact ids must not be empty")
+            cleaned.append(text)
+        return cleaned
+
+
+class HeartbeatRequest(BaseModel):
+    worker: str
+
+    @field_validator("worker")
+    @classmethod
+    def validate_non_empty_text(cls, value: str) -> str:
+        text = value.strip()
+        if not text:
+            raise ValueError("must not be empty")
+        return text
+
+
+class ReasonClaimRequest(BaseModel):
+    worker: str
+    trigger: str
+
+    @field_validator("worker", "trigger")
+    @classmethod
+    def validate_non_empty_text(cls, value: str) -> str:
+        text = value.strip()
+        if not text:
+            raise ValueError("must not be empty")
+        return text
+
+
+class ConcludeRequest(BaseModel):
+    worker: str
+    description: str
+
+    @field_validator("worker", "description")
+    @classmethod
+    def validate_non_empty_text(cls, value: str) -> str:
+        text = value.strip()
+        if not text:
+            raise ValueError("must not be empty")
+        return text
+
+
+class CompleteRequest(BaseModel):
+    from_: list[str] = Field(alias="from", min_length=1)
+    description: str
+    worker: str
+
+    model_config = {"populate_by_name": True}
+
+    @field_validator("description", "worker")
+    @classmethod
+    def validate_non_empty_text(cls, value: str) -> str:
+        text = value.strip()
+        if not text:
+            raise ValueError("must not be empty")
+        return text
+
+    @field_validator("from_")
+    @classmethod
+    def validate_fact_ids(cls, value: list[str]) -> list[str]:
+        cleaned = []
+        for item in value:
+            text = item.strip()
+            if not text:
+                raise ValueError("fact ids must not be empty")
+            cleaned.append(text)
+        return cleaned
+
+
+class ConcludeResponse(BaseModel):
+    fact: Fact
+    intent: Intent
+
+
+class UpdateProjectStatusRequest(BaseModel):
+    status: Literal["active", "stopped"]
+
+
+class UpdateProjectTitleRequest(BaseModel):
+    title: str
+
+    @field_validator("title")
+    @classmethod
+    def validate_non_empty_text(cls, value: str) -> str:
+        text = value.strip()
+        if not text:
+            raise ValueError("must not be empty")
+        return text
+
+
+class ReopenRequest(BaseModel):
+    description: str
+    creator: str
+
+    @field_validator("description", "creator")
+    @classmethod
+    def validate_non_empty_text(cls, value: str) -> str:
+        text = value.strip()
+        if not text:
+            raise ValueError("must not be empty")
+        return text
+
+
+class ReopenResponse(BaseModel):
+    project: ProjectMeta
+    fact: Fact
+    intent: Intent
+
+
+class WorkerSessionLog(BaseModel):
+    """Records a worker's LLM session execution."""
+    id: str
+    project_id: str
+    intent_id: str | None = None
+    session_id: str
+    phase: str  # bootstrap | reason | explore
+    worker: str
+    prompt_preview: str = ""
+    status: str = "success"
+    created_at: str

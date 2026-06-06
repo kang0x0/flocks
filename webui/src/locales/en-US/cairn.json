@@ -3,18 +3,62 @@
   "description": "Blackboard-based multi-agent collaboration",
   "empty": {
     "title": "No projects",
-    "description": "Create your first Cairn project to start multi-agent collaboration experiments. Cairn uses a blackboard architecture where multiple agents write shared facts, propose hints, and take on subtasks to collaboratively reason and divide work. Fill in an origin, goal, and optional hints to define the task; the system coordinates workflows and maintains an auditable decision record."
+    "description": "Cairn uses a Blackboard architecture where multiple agents collaboratively reason and divide work by sharing Facts, proposing Hints, and claiming sub-Intents. The system automatically coordinates workflows and maintains an auditable decision record for reliable complex reasoning.\n\nFill in an origin, goal, and optional hints to define a starting point. Create your first Cairn project to experience multi-agent collaborative reasoning."
   },
   "confirm": {
     "deleteTitle": "Delete project",
     "deleteDescription": "Are you sure you want to delete this Cairn project? This action cannot be undone.",
     "deleteConfirm": "Delete",
-    "deleteCancel": "Cancel"
+    "deleteCancel": "Cancel",
+    "stopTitle": "Stop project",
+    "stopDescription": "Are you sure you want to stop this project? Running tasks will be cancelled.",
+    "stopConfirm": "Stop",
+    "stopCancel": "Cancel",
+    "resumeTitle": "Resume project",
+    "resumeDescription": "Are you sure you want to resume this project?",
+    "resumeConfirm": "Resume",
+    "resumeCancel": "Cancel",
+    "stopAllTitle": "Stop All Active",
+    "stopAllDescription": "Are you sure you want to stop all {{count}} active projects? Running tasks will be cancelled.",
+    "stopAllConfirm": "Stop All",
+    "stopAllCancel": "Cancel",
+    "runTitle": "Start project",
+    "runDescription": "Start processing this project? A bootstrap intent will be created and the reason lease claimed."
   },
   "errors": {
     "missingFields": "Please fill title, origin and goal.",
-    "createFailed": "Failed to create project"
-    ,"deleteFailed": "Failed to delete project"
+    "createFailed": "Failed to create project",
+    "deleteFailed": "Failed to delete project",
+    "stopFailed": "Failed to stop project",
+    "resumeFailed": "Failed to resume project",
+    "renameFailed": "Failed to rename project",
+    "hintFailed": "Failed to add hint",
+    "intentFailed": "Failed to create intent",
+    "concludeFailed": "Failed to conclude",
+    "completeFailed": "Failed to complete",
+    "reopenFailed": "Failed to reopen",
+    "loadFailed": "Failed to load project",
+    "settingsFailed": "Failed to save settings",
+    "runFailed": "Failed to start project"
+  },
+  "toasts": {
+    "projectCreated": "Project created",
+    "intentCreated": "Intent created",
+    "concluded": "Intent concluded",
+    "completed": "Project completed",
+    "hintAdded": "Hint added",
+    "reopened": "Project reopened",
+    "stopped": "Project stopped",
+    "resumed": "Project resumed",
+    "deleted": "Project deleted",
+    "renamed": "Project renamed",
+    "claimed": "Intent claimed",
+    "released": "Intent released",
+    "prefsSaved": "Preferences saved",
+    "settingsSaved": "Settings saved",
+    "stoppedAll": "Stopped {{count}} active projects",
+    "copied": "Copied to clipboard",
+    "running": "Project processing started"
   },
   "create": {
     "open": "New Project",
@@ -31,7 +75,13 @@
     "originPlaceholder": "Describe initial facts or assumptions",
     "hintsPlaceholder": "One hint per line, e.g. 'check budget', 'consider security controls'",
     "hintsHelp": "Hints are optional; one per line to help bootstrap collaboration.",
-    "creating": "Creating…"
+    "creating": "Creating…",
+    "hintContentPlaceholder": "Strategy advice or note…",
+    "concludePlaceholder": "What did you find? (new fact)",
+    "completePlaceholder": "Why is the goal met?",
+    "reopenPlaceholder": "Why is this project not actually complete?",
+    "renamePlaceholder": "Project title",
+    "renameHelp": "Only changes the project title, allowed in any project status."
   },
   "buttons": {
     "refresh": "Refresh",
@@ -39,20 +89,145 @@
     "cancel": "Cancel",
     "delete": "Delete",
     "viewDetails": "View details →",
-    "backToList": "Back to projects"
-  }
-  ,
+    "backToList": "Back to projects",
+    "stop": "Stop",
+    "resume": "Resume",
+    "reopen": "Reopen",
+    "rename": "Rename",
+    "snapshot": "Snapshot",
+    "save": "Save",
+    "close": "Close",
+    "declare": "Declare",
+    "declareClaim": "Declare & Claim",
+    "conclude": "Conclude",
+    "complete": "Complete",
+    "addHint": "Add Hint",
+    "add": "Add",
+    "layout": "Reset Layout",
+    "fit": "Fit",
+    "all": "All",
+    "stopAll": "Stop {{count}} Active",
+    "run": "Run"
+  },
   "stats": {
-    "fact": "Facts:",
-    "intent": "Intents:",
-    "working": "In progress:",
-    "unclaimed": "Unclaimed:",
-    "hints": "Hints:",
-    "trigger": "Trigger:",
+    "fact": "Facts",
+    "intent": "Intents",
+    "working": "Working",
+    "unclaimed": "Unclaimed",
+    "hints": "Hints",
+    "trigger": "Trigger",
+    "noFacts": "No facts yet",
     "noIntents": "No intents created yet.",
     "noHints": "No hints available.",
     "from": "from",
     "to": "to",
-    "idPrefix": "ID:"
+    "idPrefix": "ID:",
+    "statusActive": "Active",
+    "statusStopped": "Stopped",
+    "statusCompleted": "Completed",
+    "facts": "facts",
+    "intents": "intents",
+    "createdAt": "Created"
+  },
+  "detail": {
+    "tabs": {
+      "flow": "Flow",
+      "facts": "Facts",
+      "intents": "Intents",
+      "hints": "Hints",
+      "log": "Log",
+      "detail": "Detail"
+    },
+    "actions": {
+      "intent": "Intent",
+      "complete": "Complete",
+      "hint": "Hint",
+      "claim": "Claim",
+      "heartbeat": "Heartbeat",
+      "claimed": "Claimed",
+      "release": "Release",
+      "conclude": "Conclude"
+    },
+    "reason": {
+      "running": "Reason Running",
+      "trigger": "Trigger",
+      "heartbeat": "Heartbeat"
+    },
+    "canvas": {
+      "factLabel": "Fact",
+      "originHint": "Project starting point",
+      "goalHint": "Project target fact",
+      "claimed": "Claimed",
+      "unclaimed": "Unclaimed",
+      "inProgress": "In Progress",
+      "concluded": "Concluded",
+      "claim": "Claim",
+      "conclude": "Conclude",
+      "release": "Release",
+      "selected": "Selected"
+    },
+    "clickNodeHint": "Click a node or edge",
+    "shiftSelectHint": "Shift+click for multi-select",
+    "selectedCount": "{{count}} selected",
+    "producedBy": "Produced by",
+    "noActivity": "No activity yet",
+    "replay": {
+      "label": "Replay",
+      "playing": "Playing",
+      "paused": "Paused",
+      "fast": "Fast",
+      "normal": "Normal",
+      "slow": "Slow",
+      "exit": "Exit",
+      "restart": "Restart"
+    },
+    "layout": {
+      "fit": "Fit",
+      "dagre_tb": "Dagre ↓",
+      "dagre_lr": "Dagre →",
+      "klay_tb": "Klay ↓",
+      "klay_lr": "Klay →",
+      "elk_tb": "ELK ↓",
+      "elk_lr": "ELK →"
+    }
+  },
+  "modals": {
+    "createIntent": {
+      "title": "New Intent",
+      "fromFacts": "From facts",
+      "descriptionPlaceholder": "What will you explore?",
+      "actor": "Actor"
+    },
+    "conclude": {
+      "title": "Conclude Intent"
+    },
+    "complete": {
+      "title": "Complete Project",
+      "subtitle": "Mark project as completed"
+    },
+    "hint": {
+      "title": "Add Hint"
+    },
+    "reopen": {
+      "title": "Reopen Project"
+    },
+    "rename": {
+      "title": "Rename Project",
+      "help": "Only changes the project title, allowed in any project status."
+    },
+    "preferences": {
+      "title": "Local Preferences",
+      "actor": "Actor",
+      "layout": "Default layout",
+      "storedLocally": "Stored only in this browser.",
+      "close": "Close",
+      "save": "Save"
+    },
+    "settings": {
+      "title": "Server Settings",
+      "intentTimeout": "Intent timeout (seconds)",
+      "reasonTimeout": "Reason timeout (seconds)",
+      "sharedConfig": "Shared backend configuration."
+    }
   }
 }

@@ -14,7 +14,8 @@ from typing import Any, Callable, Optional
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request, Response, status
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import FileResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
 from fastapi.exceptions import RequestValidationError
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
@@ -179,6 +180,14 @@ async def lifespan(app: FastAPI):
     # Initialize storage
     await _run_startup_phase(log, "storage.init", Storage.init)
     log.info("storage.initialized")
+
+    # Initialize Cairn storage (blackboard-based multi-agent protocol)
+    try:
+        from flocks.cairn.storage import configure as configure_cairn_db
+        await _run_startup_phase(log, "cairn.storage.init", configure_cairn_db)
+        log.info("cairn.storage.initialized")
+    except Exception as e:
+        log.warning("cairn.storage.init_failed", {"error": str(e)})
 
     # Ensure default device room exists, then migrate legacy device API
     # configs from flocks.json → device_integrations table.
@@ -974,6 +983,19 @@ app.include_router(device_router, prefix="/api/devices", tags=["Device"])
 
 # Cairn: Blackboard-based multi-agent collaboration protocol
 app.include_router(cairn_router, tags=["Cairn"])
+
+# ---- Cairn UI (original Alpine.js SPA) ----
+CAIRN_STATIC_DIR = Path(__file__).parent.parent / "cairn" / "server" / "static"
+
+
+@app.get("/cairn-ui", include_in_schema=False)
+async def cairn_ui():
+    return FileResponse(CAIRN_STATIC_DIR / "index.html")
+
+
+if CAIRN_STATIC_DIR.exists():
+    app.mount("/static", StaticFiles(directory=str(CAIRN_STATIC_DIR)), name="cairn_static")
+
 
 @app.get("/", tags=["Root"])
 async def root():

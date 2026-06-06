@@ -315,7 +315,7 @@ export default function Layout() {
           { name: t('workspace'), href: '/workspace', icon: FolderOpen },
           { name: t('tasks'), href: '/tasks', icon: ListTodo },
           { name: t('workflows'), href: '/workflows', icon: Workflow },
-          { name: 'Cairn Projects', href: '/cairn', icon: GitBranch },
+          { name: t('cairnProjects'), href: '/cairn', icon: GitBranch },
         ],
       },
       {
@@ -345,7 +345,8 @@ export default function Layout() {
     matchPath('/workflows/create', location.pathname) ||
     matchPath('/workflows/:id/edit', location.pathname) ||
     matchPath('/workflows/:id', location.pathname) ||
-    matchPath('/sessions', location.pathname);
+    matchPath('/sessions', location.pathname) ||
+    matchPath('/cairn/:id', location.pathname);
 
   return (
     <div className="min-h-screen bg-gray-50">

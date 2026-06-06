@@ -1,489 +1,514 @@
-import { useState, useEffect, type MouseEvent } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import {
-  GitBranch,
-  Plus,
-  RefreshCw,
-  Clock,
-  CheckCircle2,
-  PauseCircle,
-  Activity,
-  FileText,
-  Target,
-  Trash2,
-  X,
-  ChevronRight,
-} from 'lucide-react';
-import { useConfirm } from '@/components/common/ConfirmDialog';
-import PageHeader from '@/components/common/PageHeader';
 import LoadingSpinner from '@/components/common/LoadingSpinner';
-import EmptyState from '@/components/common/EmptyState';
-import { useTranslation } from 'react-i18next';
-import api from '@/api/client';
+import { cairnApi, type ProjectSummary } from '@/api/cairn';
 
-// ---------------------------------------------------------------------------
-// Types
-// ---------------------------------------------------------------------------
-
-interface CairnProjectSummary {
-  id: string;
-  title: string;
-  status: 'active' | 'stopped' | 'completed';
-  createdAt: string;
-  factCount: number;
-  intentCount: number;
-  workingIntentCount: number;
-  unclaimedIntentCount: number;
-  hintCount: number;
-  reason?: {
-    worker: string;
-    trigger: string;
-    startedAt: string;
-    lastHeartbeatAt: string;
-  } | null;
+function formatDate(dateStr: string): string {
+  const d = new Date(dateStr);
+  const now = Date.now();
+  const diff = now - d.getTime();
+  const mins = Math.floor(diff / 60000);
+  if (mins < 1) return 'just now';
+  if (mins < 60) return `${mins}m ago`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  if (days < 30) return `${days}d ago`;
+  return d.toLocaleDateString();
 }
 
-// ---------------------------------------------------------------------------
-// Color helpers (mirrors Workflow page)
-// ---------------------------------------------------------------------------
-
-const PROJECT_PALETTE = [
-  '#ef4444', // red-500
-  '#f59e0b', // amber-500
-  '#10b981', // emerald-500
-  '#3b82f6', // blue-500
-  '#8b5cf6', // violet-500
-  '#ec4899', // pink-500
-  '#6366f1', // indigo-500
-  '#06b6d4', // cyan-500
-];
-
-function resolveProjectColor(project: CairnProjectSummary): string {
-  let h = 0;
-  const seed = project.id || project.title;
-  for (let i = 0; i < seed.length; i++) {
-    h = seed.charCodeAt(i) + ((h << 5) - h);
-  }
-  return PROJECT_PALETTE[Math.abs(h) % PROJECT_PALETTE.length];
-}
-
-function hexAlpha(hex: string, alpha: number): string {
-  const h = hex.replace('#', '');
-  const full = h.length === 3 ? h.split('').map(c => c + c).join('') : h;
-  const r = parseInt(full.slice(0, 2), 16);
-  const g = parseInt(full.slice(2, 4), 16);
-  const b = parseInt(full.slice(4, 6), 16);
-  return `rgba(${r},${g},${b},${alpha})`;
-}
-
-// ---------------------------------------------------------------------------
-// Helper functions
-// ---------------------------------------------------------------------------
-
-function getStatusIcon(status: string) {
+function statusBadgeClass(status: string): string {
   switch (status) {
-    case 'active':
-      return <Activity className="w-4 h-4 text-green-500" />;
-    case 'stopped':
-      return <PauseCircle className="w-4 h-4 text-yellow-500" />;
-    case 'completed':
-      return <CheckCircle2 className="w-4 h-4 text-blue-500" />;
-    default:
-      return <Clock className="w-4 h-4 text-gray-500" />;
+    case 'active': return 'bg-teal-50 text-teal-700 border-teal-200';
+    case 'stopped': return 'bg-amber-50 text-amber-700 border-amber-200';
+    case 'completed': return 'bg-slate-100 text-slate-500 border-slate-200';
+    default: return 'bg-slate-100 text-slate-500 border-slate-200';
   }
 }
 
-function formatDate(dateString: string): string {
-  const date = new Date(dateString);
-  return date.toLocaleDateString('zh-CN', {
-    year: 'numeric',
-    month: 'short',
-    day: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  });
+function reasonBadgeText(reason: { worker: string | null; trigger: string | null }): string {
+  if (reason.trigger) return `${reason.worker} · ${reason.trigger}`;
+  return reason.worker || 'Reasoning';
 }
 
-function getStatusLabel(status: string): string {
-  switch (status) {
-    case 'active':
-      return '进行中';
-    case 'stopped':
-      return '已停止';
-    case 'completed':
-      return '已完成';
-    default:
-      return status;
-  }
+function workingIntentBadgeText(count: number): string {
+  return `${count} working`;
 }
 
-// ---------------------------------------------------------------------------
-// CairnProjectsPage
-// ---------------------------------------------------------------------------
-
-export default function CairnProjectsPage() {
-  const { t } = useTranslation('cairn');
+export default function CairnProjectsList() {
   const navigate = useNavigate();
-  const confirm = useConfirm();
-  const [projects, setProjects] = useState<CairnProjectSummary[]>([]);
+  const [projects, setProjects] = useState<ProjectSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [refreshing, setRefreshing] = useState(false);
-  const [showCreateModal, setShowCreateModal] = useState(false);
-  const [newTitle, setNewTitle] = useState('');
-  const [newOrigin, setNewOrigin] = useState('');
-  const [newGoal, setNewGoal] = useState('');
-  const [newHints, setNewHints] = useState('');
-  const [submitting, setSubmitting] = useState(false);
-  const [deletingProjectId, setDeletingProjectId] = useState<string | null>(null);
-  const [createError, setCreateError] = useState<string | null>(null);
+  const [showNewProject, setShowNewProject] = useState(false);
+  const [showRename, setShowRename] = useState<{ id: string; title: string } | null>(null);
 
-  const fetchProjects = async () => {
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError(null);
     try {
-      setLoading(true);
-      setError(null);
-      const response = await api.get('/api/cairn/projects');
-      setProjects(response.data);
+      const data = await cairnApi.listProjects();
+      setProjects(data);
     } catch (err: any) {
-      console.error('Failed to fetch Cairn projects:', err);
-      setError(err.response?.data?.detail || 'Failed to load projects');
+      setError(err?.response?.data?.detail || err.message || 'Failed to load');
     } finally {
       setLoading(false);
-      setRefreshing(false);
     }
-  };
-
-  useEffect(() => {
-    fetchProjects();
   }, []);
 
-  const handleRefresh = async () => {
-    if (refreshing) return;
-    setRefreshing(true);
-    await fetchProjects();
-  };
+  useEffect(() => { load(); }, [load]);
 
-  const handleCreateProject = () => {
-    setCreateError(null);
-    setShowCreateModal(true);
-  };
+  // Dispatcher auto mode — start ON by default
+  const [dispatcherRunning, setDispatcherRunning] = useState(false);
+  const [dispatcherStarting, setDispatcherStarting] = useState(false);
+  const autoStartedRef = useRef(false);
 
-  const handleCloseCreateModal = () => {
-    setShowCreateModal(false);
-    setCreateError(null);
-    setNewTitle('');
-    setNewOrigin('');
-    setNewGoal('');
-    setNewHints('');
-  };
+  // Auto-start dispatcher on first mount
+  useEffect(() => {
+    if (autoStartedRef.current) return;
+    autoStartedRef.current = true;
+    cairnApi.startDispatcher().then(() => setDispatcherRunning(true)).catch(() => {});
+  }, []);
 
-  const handleSubmitCreateProject = async () => {
-    if (!newTitle.trim() || !newOrigin.trim() || !newGoal.trim()) {
-      setCreateError(t('errors.missingFields'));
-      return;
-    }
+  // Poll dispatcher status
+  useEffect(() => {
+    const poll = async () => {
+      try {
+        const status = await cairnApi.getDispatcherStatus();
+        setDispatcherRunning(status.running);
+      } catch { /* ignore */ }
+    };
+    poll();
+    const timer = setInterval(poll, 3000);
+    return () => clearInterval(timer);
+  }, []);
 
-    setSubmitting(true);
-    setCreateError(null);
-
+  async function handleStartDispatcher() {
+    setDispatcherStarting(true);
     try {
-      const hints = newHints
-        .split('\n')
-        .map((line) => line.trim())
-        .filter(Boolean)
-        .map((content) => ({ content, creator: 'user' }));
-
-      const response = await api.post('/api/cairn/projects', {
-        title: newTitle.trim(),
-        origin: newOrigin.trim(),
-        goal: newGoal.trim(),
-        hints: hints.length > 0 ? hints : undefined,
-      });
-
-      handleCloseCreateModal();
-      navigate(`/cairn/${response.data.id}`);
-    } catch (err: any) {
-      console.error('Failed to create Cairn project:', err);
-      setCreateError(err.response?.data?.detail || err.message || t('errors.createFailed'));
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  const handleDeleteProject = async (projectId: string, event: MouseEvent<HTMLButtonElement>) => {
-    event.stopPropagation();
-    const ok = await confirm({
-      title: t('confirm.deleteTitle'),
-      description: t('confirm.deleteDescription'),
-      confirmText: t('confirm.deleteConfirm'),
-      cancelText: t('confirm.deleteCancel'),
-      variant: 'danger',
-    });
-
-    if (!ok) return;
-    setDeletingProjectId(projectId);
-
-    try {
-      await api.delete(`/api/cairn/projects/${projectId}`);
-      await fetchProjects();
-    } catch (err: any) {
-      console.error('Failed to delete Cairn project:', err);
-      setError(err.response?.data?.detail || t('errors.deleteFailed'));
-    } finally {
-      setDeletingProjectId(null);
-    }
-  };
-
-  const handleViewProject = (projectId: string) => {
-    navigate(`/cairn/${projectId}`);
-  };
-
-  if (loading && !refreshing) {
-    return (
-      <div className="flex items-center justify-center h-full">
-        <LoadingSpinner />
-      </div>
-    );
+      await cairnApi.startDispatcher();
+      setDispatcherRunning(true);
+    } catch { alert('Failed to start dispatcher'); }
+    finally { setDispatcherStarting(false); }
   }
 
-  if (error) {
+  async function handleStopDispatcher() {
+    try {
+      await cairnApi.stopDispatcher();
+      setDispatcherRunning(false);
+    } catch {
+      try {
+        const status = await cairnApi.getDispatcherStatus();
+        if (!status.running) setDispatcherRunning(false);
+      } catch { /* ignore */ }
+    }
+  }
+
+  const countByStatus = (status: string) => projects.filter((p) => p.status === status).length;
+
+  const hasActive = () => countByStatus('active') > 0;
+
+  async function handleStopAll() {
+    const active = projects.filter((p) => p.status === 'active');
+    if (!active.length) return;
+    if (!confirm(`Stop ${active.length} active project(s)?`)) return;
+    try {
+      await Promise.all(active.map((p) => cairnApi.updateProjectStatus(p.id, 'stopped')));
+      await load();
+    } catch {
+      alert('Failed to stop all projects');
+    }
+  }
+
+  async function toggleStop(project: ProjectSummary) {
+    try {
+      await cairnApi.updateProjectStatus(project.id, project.status === 'active' ? 'stopped' : 'active');
+      await load();
+    } catch (err: any) {
+      alert(err?.response?.data?.detail || 'Failed to update status');
+    }
+  }
+
+  async function handleDelete(project: ProjectSummary) {
+    if (!confirm(`Delete "${project.title}"?`)) return;
+    try {
+      await cairnApi.deleteProject(project.id);
+      setProjects((prev) => prev.filter((p) => p.id !== project.id));
+    } catch (err: any) {
+      alert(err?.response?.data?.detail || 'Failed to delete');
+    }
+  }
+
+  async function handleRename(id: string, title: string) {
+    try {
+      await cairnApi.updateProjectTitle(id, title);
+      await load();
+      setShowRename(null);
+    } catch (err: any) {
+      alert(err?.response?.data?.detail || 'Failed to rename');
+    }
+  }
+
+  if (loading) {
     return (
-      <div className="flex items-center justify-center h-full">
-        <EmptyState
-          icon={<GitBranch className="w-16 h-16 text-red-500" />}
-          title="加载项目失败"
-          description={error}
-          action={
-            <button
-              onClick={handleRefresh}
-              className="inline-flex items-center px-3 py-1.5 bg-indigo-600 text-white rounded-md text-sm"
-            >
-              重试
-            </button>
-          }
-        />
+      <div className="h-full flex items-center justify-center">
+        <LoadingSpinner size="lg" />
       </div>
     );
   }
 
   return (
-    <div className="h-full flex flex-col bg-slate-50 text-slate-900 dark:text-slate-100">
-      {/* Header */}
-      <PageHeader
-        title={t('title')}
-        description={t('description')}
-        icon={<GitBranch className="w-8 h-8 text-red-600 dark:text-red-400" />}
-      />
-
-      {/* Toolbar (match Workflow page style) */}
-      <div className="px-4 py-2 border-b border-gray-100 flex items-center gap-3">
-        <div className="ml-auto flex items-center gap-2">
+    <div className="h-full flex flex-col overflow-hidden">
+      <header className="bg-white/80 backdrop-blur border-b border-slate-200/60 px-4 py-2.5 flex items-center gap-3 shrink-0">
+        <div className="flex items-center gap-2.5 min-w-0">
+          <div className="h-8 w-8 rounded-lg border border-slate-200 bg-white shadow-sm shadow-slate-200/40 flex items-center justify-center shrink-0 overflow-hidden">
+            <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H19a1 1 0 0 1 1 1v18a1 1 0 0 1-1 1H6.5a2.5 2.5 0 0 1 0-5H20"/><path d="M8 7h8"/><path d="M8 11h8"/><path d="M8 15h5"/></svg>
+          </div>
+          <span className="font-semibold text-slate-700 tracking-tight">Cairn</span>
+        </div>
+        <div className="flex-1" />
+        <div className="flex items-center gap-3 text-[11px] text-slate-400">
+          <span className="inline-flex items-center gap-1.5 shrink-0" title="All projects">
+            <span className="font-medium uppercase tracking-[0.12em] text-slate-400">All</span>
+            <span className="font-semibold text-slate-600 tabular-nums">{projects.length}</span>
+          </span>
+          <span className="inline-flex items-center gap-1.5 shrink-0" title="Active projects">
+            <span className="h-1.5 w-1.5 rounded-full bg-teal-500" />
+            <span className="font-semibold text-teal-700 tabular-nums">{countByStatus('active')}</span>
+          </span>
+          <span className="inline-flex items-center gap-1.5 shrink-0" title="Stopped projects">
+            <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
+            <span className="font-semibold text-amber-700 tabular-nums">{countByStatus('stopped')}</span>
+          </span>
+          <span className="inline-flex items-center gap-1.5 shrink-0" title="Completed projects">
+            <span className="h-1.5 w-1.5 rounded-full bg-slate-400" />
+            <span className="font-semibold text-slate-600 tabular-nums">{countByStatus('completed')}</span>
+          </span>
+          {hasActive() && (
+            <button
+              onClick={handleStopAll}
+              className="h-7 px-2.5 rounded-lg border border-amber-200 text-xs text-amber-700 hover:bg-amber-50 transition inline-flex items-center gap-1.5 shrink-0"
+              title="Stop all active projects"
+            >
+              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="1.8" viewBox="0 0 24 24"><path d="M6 6h12v12H6z"/></svg>
+              Stop Active
+            </button>
+          )}
+        </div>
+        <div className="flex items-center gap-1.5">
           <button
-            onClick={handleRefresh}
-            disabled={refreshing}
-            title={refreshing ? t('buttons.refresh') : t('buttons.refresh')}
-            className={`p-1.5 rounded-lg border transition-all ${
-              refreshing ? 'border-green-200 text-green-600' : 'border-gray-200 text-gray-400 hover:bg-gray-50 hover:text-gray-600 disabled:opacity-50'
+            onClick={dispatcherRunning ? handleStopDispatcher : handleStartDispatcher}
+            disabled={dispatcherStarting}
+            title={dispatcherRunning ? 'Stop auto-dispatcher' : 'Start auto-dispatcher'}
+            className={`px-2.5 h-7 rounded-lg text-xs font-medium transition inline-flex items-center gap-1.5 border shrink-0 ${
+              dispatcherRunning
+                ? 'bg-emerald-50 border-emerald-200 text-emerald-600 hover:bg-emerald-100'
+                : 'bg-white/90 border-slate-200 text-slate-600 hover:bg-slate-50'
             }`}
           >
-            <RefreshCw className={`w-3.5 h-3.5 ${refreshing ? 'animate-spin' : ''}`} />
+            <span className={`w-1.5 h-1.5 rounded-full ${dispatcherRunning ? 'bg-emerald-500 animate-pulse' : 'bg-slate-300'}`}></span>
+            {dispatcherRunning ? 'Auto: On' : 'Auto: Off'}
           </button>
-
           <button
-            onClick={handleCreateProject}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors text-sm"
+            onClick={() => setShowNewProject(true)}
+            className="h-7 px-2.5 rounded-lg border border-brand-200 text-xs text-brand-600 hover:bg-brand-50 transition inline-flex items-center gap-1.5"
           >
-            <Plus className="w-4 h-4" />
-            {t('create.open')}
+            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="1.9" viewBox="0 0 24 24"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
+            New Project
           </button>
         </div>
-      </div>
+      </header>
 
-      {/* Content */}
-      <div className="flex-1 overflow-auto px-6 pb-6">
+      <div className="flex-1 overflow-y-auto p-4">
+        {error && (
+          <div className="mb-4 flex items-center gap-2 p-3 bg-red-50 border border-red-200 rounded-xl text-red-700 text-sm">
+            <span className="w-1.5 h-1.5 rounded-full bg-red-500 shrink-0" />
+            {error}
+          </div>
+        )}
+
         {projects.length === 0 ? (
-          <EmptyState
-            icon={<GitBranch className="w-16 h-16 text-slate-400" />}
-            title={t('empty.title')}
-            description={t('empty.description')}
-          />
+          <div className="flex flex-col items-center justify-center h-full text-slate-400">
+            <svg className="w-20 h-20 mb-5 opacity-30" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H19a1 1 0 0 1 1 1v18a1 1 0 0 1-1 1H6.5a2.5 2.5 0 0 1 0-5H20"/><path d="M8 7h8"/><path d="M8 11h8"/><path d="M8 15h5"/></svg>
+            <p className="text-lg font-medium text-slate-500">No projects yet</p>
+            <p className="text-sm mt-1">Create a project to start exploring</p>
+            <button
+              onClick={() => setShowNewProject(true)}
+              className="mt-4 h-8 px-4 rounded-lg border border-slate-300 text-xs font-medium text-slate-600 hover:bg-slate-100 transition inline-flex items-center gap-1.5"
+            >
+              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="1.9" viewBox="0 0 24 24"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
+              New Project
+            </button>
+          </div>
         ) : (
-          <div className="grid gap-3 grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-            {projects.map((project) => {
-              const color = resolveProjectColor(project);
-              return (
-                <div
-                  key={project.id}
-                  onClick={() => handleViewProject(project.id)}
-                  className="group relative bg-white rounded-xl border border-gray-200 flex flex-col overflow-hidden cursor-pointer transition-all duration-150 hover:border-gray-300 hover:shadow-md"
-                >
-                  {/* Top accent bar */}
-                  <div style={{ height: 3, backgroundColor: color }} />
-
-                  {/* Card body */}
-                  <div className="flex-1 px-4 pt-3 pb-2 flex flex-col gap-2 min-w-0">
-                    {/* Avatar + name row */}
-                    <div className="flex items-start gap-2.5">
-                      <div
-                        className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0 mt-0.5"
-                        style={{ backgroundColor: hexAlpha(color, 0.12) }}
-                      >
-                        <GitBranch className="w-4 h-4" style={{ color }} />
-                      </div>
-
-                      <div className="min-w-0 flex-1">
-                        <span className="block text-sm font-semibold text-gray-900 truncate leading-snug">
-                          {project.title}
-                        </span>
-                        <div className="flex items-center gap-1 mt-0.5 flex-wrap">
-                          {/* Status badge */}
-                          <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium border ${
-                            project.status === 'active'
-                              ? 'bg-green-50 text-green-600 border-green-200'
-                              : project.status === 'stopped'
-                              ? 'bg-yellow-50 text-yellow-600 border-yellow-200'
-                              : 'bg-blue-50 text-blue-600 border-blue-200'
-                          }`}>
-                            {getStatusLabel(project.status)}
-                          </span>
-                        </div>
-                      </div>
-
-                      <ChevronRight className="w-4 h-4 text-gray-300 shrink-0 mt-1 group-hover:text-gray-500 transition-colors" />
-                    </div>
-
-                    {/* Created date */}
-                    <p className="text-xs text-gray-400">
-                      创建于 {formatDate(project.createdAt)}
-                    </p>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
+            {projects.map((p) => (
+              <div
+                key={p.id}
+                onClick={() => navigate(`/cairn/${p.id}`)}
+                className="group h-full flex flex-col bg-white rounded-2xl border border-slate-200/60 p-5 cursor-pointer transition-all duration-200 hover:shadow-lg hover:shadow-slate-200/50 hover:border-slate-300 hover:-translate-y-0.5"
+              >
+                <div className="flex items-start justify-between mb-3">
+                  <span className="text-[11px] font-mono text-slate-400 tracking-wide">{p.id}</span>
+                  <span className={`px-1.5 py-0.5 rounded-full text-[9px] font-semibold uppercase tracking-[0.12em] border ${statusBadgeClass(p.status)}`}>
+                    {p.status}
+                  </span>
+                </div>
+                <div className="mb-3 flex-1">
+                  <div className="title-action-trigger flex items-start gap-2">
+                    <h3 className="min-w-0 flex-1 text-[15px] font-semibold text-slate-700 break-words group-hover:text-brand-600 transition-colors">
+                      {p.title}
+                    </h3>
+                    <button
+                      onClick={(e) => { e.stopPropagation(); setShowRename({ id: p.id, title: p.title }); }}
+                      className="title-action-button mt-0.5 inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-slate-200 text-slate-400 hover:border-slate-300 hover:bg-slate-50 hover:text-slate-600"
+                      title="Rename project"
+                    >
+                      <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="1.8" viewBox="0 0 24 24"><path d="m16.862 4.487 1.65-1.65a1.875 1.875 0 1 1 2.652 2.652l-9.193 9.193a4.5 4.5 0 0 1-1.897 1.13L6 17l1.188-4.074a4.5 4.5 0 0 1 1.13-1.897l8.544-8.542Z"/><path d="M19.5 7.125 16.875 4.5"/><path d="M5.25 18.75h13.5"/></svg>
+                    </button>
                   </div>
-
-                  {/* Stats footer — grid of 4 columns like Workflow style */}
-                  <div className="border-t border-gray-100 px-4 py-2.5 grid grid-cols-4 gap-1">
-                    <div>
-                      <div className="text-base font-bold text-gray-900 tabular-nums">
-                        {project.factCount}
+                  <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                    {p.reason && (
+                      <div className="inline-flex items-center gap-1.5 rounded-full border border-sky-200 bg-sky-50 px-2 py-1 text-[10px] font-medium text-sky-700 reason-chip-running">
+                        <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24">
+                          <path d="M12 3v3"/><path d="M18.364 5.636 16.95 7.05"/><path d="M21 12h-3"/><path d="m18.364 18.364-1.414-1.414"/><path d="M12 21v-3"/><path d="m7.05 16.95-1.414 1.414"/><path d="M6 12H3"/><path d="M7.05 7.05 5.636 5.636"/><circle cx="12" cy="12" r="3.5"/>
+                        </svg>
+                        <span>{reasonBadgeText(p.reason)}</span>
                       </div>
-                      <div className="text-[10px] text-gray-500">{t('stats.fact')}</div>
-                    </div>
-                    <div>
-                      <div className="text-base font-bold text-gray-900 tabular-nums">
-                        {project.intentCount}
+                    )}
+                    {p.working_intent_count > 0 && (
+                      <div className="inline-flex items-center gap-1.5 rounded-full border border-amber-200 bg-amber-50 px-2 py-1 text-[10px] font-medium text-amber-700 intent-chip-running">
+                        <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24"><path d="M12 6v6l4 2"/><circle cx="12" cy="12" r="8.5"/></svg>
+                        <span>{workingIntentBadgeText(p.working_intent_count)}</span>
                       </div>
-                      <div className="text-[10px] text-gray-500">{t('stats.intent')}</div>
-                    </div>
-                    <div>
-                      <div className="text-base font-bold tabular-nums"
-                           style={{ color: project.workingIntentCount > 0 ? '#16a34a' : '#9ca3af' }}>
-                        {project.workingIntentCount}
-                      </div>
-                      <div className="text-[10px] text-gray-500">{t('stats.working')}</div>
-                    </div>
-                    <div>
-                      <div className="text-base font-bold text-gray-900 tabular-nums flex items-center gap-0.5">
-                        <Clock className="w-3 h-3 text-gray-400 shrink-0" />
-                        {project.unclaimedIntentCount}
-                      </div>
-                      <div className="text-[10px] text-gray-500">{t('stats.unclaimed')}</div>
-                    </div>
+                    )}
                   </div>
                 </div>
-              );
-            })}
+                <div className="flex items-center gap-3 text-[11px] text-slate-400">
+                  <span className="flex items-center gap-1">
+                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="1.5" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2v4m0 12v4m10-10h-4M6 12H2m15.07-7.07l-2.83 2.83M9.76 14.24l-2.83 2.83m11.14 0l-2.83-2.83M9.76 9.76L6.93 6.93"/></svg>
+                    <span>{p.fact_count}</span>
+                  </span>
+                  <span className="flex items-center gap-1">
+                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="1.5" viewBox="0 0 24 24"><path d="M13.5 4.5L21 12m0 0l-7.5 7.5M21 12H3"/></svg>
+                    <span>{p.intent_count}</span>
+                  </span>
+                  {p.working_intent_count > 0 && (
+                    <span className="flex items-center gap-1 text-amber-500">
+                      <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M12 6v6l4 2"/><circle cx="12" cy="12" r="10"/></svg>
+                      <span>{p.working_intent_count}</span>
+                    </span>
+                  )}
+                  {p.unclaimed_intent_count > 0 && (
+                    <span className="flex items-center gap-1 text-slate-400">
+                      <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="1.5" strokeDasharray="3 2" viewBox="0 0 24 24">
+                        <circle cx="12" cy="12" r="10" /><path d="M12 8v4m0 4h.01" />
+                      </svg>
+                      <span>{p.unclaimed_intent_count}</span>
+                    </span>
+                  )}
+                  <span className="flex items-center gap-1">
+                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="1.5" viewBox="0 0 24 24"><path d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 1 1 7.072 0l-.548.547A3.374 3.374 0 0 0 14 18.469V19a2 2 0 1 1-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547Z"/></svg>
+                    <span>{p.hint_count}</span>
+                  </span>
+                </div>
+                <div className="mt-1.5 flex items-center gap-1.5 text-[11px] text-slate-400">
+                  <svg className="w-3.5 h-3.5 shrink-0" fill="none" stroke="currentColor" strokeWidth="1.6" viewBox="0 0 24 24">
+                    <path d="M8 2v3M16 2v3" /><path d="M3.5 9.5h17" /><rect x="3.5" y="4.5" width="17" height="16" rx="2.5" /><path d="M8 13h3M8 16h6" />
+                  </svg>
+                  <span>{formatDate(p.created_at)}</span>
+                </div>
+                <div className="mt-3 pt-3 border-t border-slate-100 flex items-center justify-end gap-1.5">
+                  <div className="flex items-center justify-end gap-1.5 flex-wrap">
+                    <button
+                      onClick={(e) => { e.stopPropagation(); navigate(`/cairn/${p.id}`); }}
+                      className="px-2 py-1 rounded-lg border border-slate-200 text-[11px] text-slate-500 hover:bg-slate-50 hover:text-slate-700 transition flex items-center gap-1"
+                    >
+                      <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="1.7" viewBox="0 0 24 24"><path d="M14.25 3H7.5A2.25 2.25 0 0 0 5.25 5.25v13.5A2.25 2.25 0 0 0 7.5 21h9a2.25 2.25 0 0 0 2.25-2.25V8.25L14.25 3Z"/><path d="M14.25 3v5.25h4.5"/><path d="M8.25 12h7.5M8.25 15h5.25"/></svg>
+                      Snapshot
+                    </button>
+                    {p.status !== 'completed' && (
+                      <button
+                        onClick={(e) => { e.stopPropagation(); toggleStop(p); }}
+                        className={`px-2 py-1 rounded-lg border text-[11px] transition flex items-center gap-1 ${
+                          p.status === 'active'
+                            ? 'border-amber-200 text-amber-600 hover:bg-amber-50'
+                            : 'border-teal-200 text-teal-600 hover:bg-teal-50'
+                        }`}
+                      >
+                        {p.status === 'active' ? (
+                          <><svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="1.8" viewBox="0 0 24 24"><path d="M6 6h12v12H6z"/></svg>Stop</>
+                        ) : (
+                          <><svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="1.8" viewBox="0 0 24 24"><path d="m8 5 11 7-11 7V5Z"/></svg>Resume</>
+                        )}
+                      </button>
+                    )}
+                    {p.status === 'completed' && (
+                      <button
+                        onClick={(e) => { e.stopPropagation(); alert('Reopen not yet implemented in UI'); }}
+                        className="px-2 py-1 rounded-lg border border-sky-200 text-[11px] text-sky-600 hover:bg-sky-50 transition flex items-center gap-1"
+                      >
+                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="1.7" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 3-6.708"/><path d="M3 3v6h6"/></svg>
+                        Reopen
+                      </button>
+                    )}
+                    <button
+                      onClick={(e) => { e.stopPropagation(); handleDelete(p); }}
+                      className="px-2 py-1 rounded-lg border border-rose-200 text-[11px] text-rose-500 hover:bg-rose-50 hover:text-rose-600 transition flex items-center gap-1"
+                    >
+                      <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="1.7" viewBox="0 0 24 24"><path d="M3 6h18"/><path d="M8 6V4.75A1.75 1.75 0 0 1 9.75 3h4.5A1.75 1.75 0 0 1 16 4.75V6"/><path d="M19 6l-.63 11.338A2 2 0 0 1 16.37 19.5H7.63a2 2 0 0 1-1.997-2.162L5 6"/><path d="M10 10.5v5"/><path d="M14 10.5v5"/></svg>
+                      Delete
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ))}
           </div>
         )}
       </div>
 
-      {showCreateModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-transparent p-4">
-          <div className="w-full max-w-2xl rounded-3xl bg-white shadow-2xl overflow-hidden ring-1 ring-black/10">
-            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200">
-              <div>
-                <h2 className="text-xl font-semibold text-slate-900">{t('create.title')}</h2>
-                <p className="text-sm text-slate-500 mt-1">{t('create.subtitle')}</p>
-              </div>
-              <button
-                type="button"
-                onClick={handleCloseCreateModal}
-                className="inline-flex h-10 w-10 items-center justify-center rounded-full text-slate-500 hover:bg-slate-100 hover:text-slate-700"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            <div className="space-y-4 px-6 py-5">
-              {createError && (
-                <div className="rounded-2xl bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">
-                  {createError}
-                </div>
-              )}
-
-              <div className="grid gap-4 sm:grid-cols-2">
-                <div>
-                  <label className="block text-sm font-medium text-slate-700"><span className="text-rose-600 mr-1">*</span>{t('form.titleLabel')}</label>
-                  <input
-                    value={newTitle}
-                    onChange={(e) => setNewTitle(e.target.value)}
-                    className="mt-2 block w-full rounded-2xl border border-slate-300 bg-slate-50 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200"
-                    placeholder={t('form.titlePlaceholder')}
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-slate-700"><span className="text-rose-600 mr-1">*</span>{t('form.originLabel')}</label>
-                <textarea
-                  value={newOrigin}
-                  onChange={(e) => setNewOrigin(e.target.value)}
-                  rows={3}
-                  className="mt-2 block w-full rounded-2xl border border-slate-300 bg-slate-50 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200"
-                  placeholder={t('form.originPlaceholder')}
-                />
-              </div>
-
-              <div className="mt-4">
-                <label className="block text-sm font-medium text-slate-700"><span className="text-rose-600 mr-1">*</span>{t('form.goalLabel')}</label>
-                <input
-                  value={newGoal}
-                  onChange={(e) => setNewGoal(e.target.value)}
-                  className="mt-2 block w-full rounded-2xl border border-slate-300 bg-slate-50 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200"
-                  placeholder={t('form.goalPlaceholder')}
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-slate-700">{t('form.hintsLabel')}</label>
-                <textarea
-                  value={newHints}
-                  onChange={(e) => setNewHints(e.target.value)}
-                  rows={4}
-                  className="mt-2 block w-full rounded-2xl border border-slate-300 bg-slate-50 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200"
-                  placeholder={t('form.hintsPlaceholder')}
-                />
-                <p className="mt-2 text-xs text-slate-500">{t('form.hintsHelp')}</p>
-              </div>
-            </div>
-
-            <div className="flex flex-col gap-3 border-t border-slate-200 bg-slate-50 px-6 py-4 sm:flex-row sm:justify-end">
-              <button
-                type="button"
-                onClick={handleCloseCreateModal}
-                className="inline-flex items-center justify-center rounded-2xl border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100"
-              >
-                {t('buttons.cancel')}
-              </button>
-              <button
-                type="button"
-                onClick={handleSubmitCreateProject}
-                disabled={submitting}
-                className="inline-flex items-center justify-center rounded-2xl bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:cursor-not-allowed disabled:bg-slate-400"
-              >
-                {submitting ? t('form.creating') : t('buttons.create')}
-              </button>
-            </div>
-          </div>
-        </div>
+      {showNewProject && (
+        <NewProjectModal
+          onClose={() => setShowNewProject(false)}
+          onCreated={(id) => { setShowNewProject(false); navigate(`/cairn/${id}`); }}
+        />
       )}
+
+      {showRename && (
+        <RenameModal
+          projectId={showRename.id}
+          currentTitle={showRename.title}
+          onClose={() => setShowRename(null)}
+          onRenamed={(title) => handleRename(showRename.id, title)}
+        />
+      )}
+    </div>
+  );
+}
+
+function NewProjectModal({
+  onClose,
+  onCreated,
+}: {
+  onClose: () => void;
+  onCreated: (id: string) => void;
+}) {
+  const [title, setTitle] = useState('');
+  const [origin, setOrigin] = useState('');
+  const [goal, setGoal] = useState('');
+  const [hints, setHints] = useState<string[]>(['']);
+  const [creating, setCreating] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function handleSubmit(e: React.SyntheticEvent) {
+    e.preventDefault();
+    if (!title.trim() || !origin.trim() || !goal.trim()) {
+      setError('Title, origin, and goal are required');
+      return;
+    }
+    setCreating(true);
+    setError(null);
+    try {
+      const hintList = hints.filter((h) => h.trim()).map((h) => ({ content: h.trim(), creator: 'user' }));
+      const project = await cairnApi.createProject({ title: title.trim(), origin: origin.trim(), goal: goal.trim(), hints: hintList.length > 0 ? hintList : undefined });
+      onCreated(project.project.id);
+    } catch (err: any) {
+      setError(err?.response?.data?.detail || err.message || 'Failed to create');
+    } finally {
+      setCreating(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center overlay" onClick={onClose}>
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg p-6 border border-slate-200/60 mx-4" onClick={(e) => e.stopPropagation()}>
+        <h3 className="text-base font-semibold text-slate-700 mb-4">New Project</h3>
+        <form onSubmit={handleSubmit} className="space-y-3">
+          <input
+            type="text"
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            className="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand-100 focus:border-brand-400 transition placeholder:text-slate-300"
+            placeholder="Project title"
+          />
+          <textarea
+            value={origin}
+            onChange={(e) => setOrigin(e.target.value)}
+            className="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand-100 focus:border-brand-400 transition placeholder:text-slate-300"
+            placeholder="Origin — starting point"
+            rows={2}
+          />
+          <textarea
+            value={goal}
+            onChange={(e) => setGoal(e.target.value)}
+            className="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand-100 focus:border-brand-400 transition placeholder:text-slate-300"
+            placeholder="Goal — what to achieve"
+            rows={2}
+          />
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-[11px] text-slate-400 font-medium uppercase tracking-wider">Hints (optional)</span>
+              <button type="button" onClick={() => setHints([...hints, ''])} className="text-[11px] text-brand-500 hover:text-brand-600 font-medium">+ Add</button>
+            </div>
+            {hints.map((h, idx) => (
+              <div key={idx} className="flex gap-2 mb-2">
+                <input value={h} onChange={(e) => { const n = [...hints]; n[idx] = e.target.value; setHints(n); }} placeholder="Hint content"
+                  className="flex-1 px-3 py-1.5 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-100 focus:border-brand-400 transition placeholder:text-slate-300" />
+                {hints.length > 1 && (
+                  <button type="button" onClick={() => setHints(hints.filter((_, i) => i !== idx))} className="px-2 text-slate-300 hover:text-red-400 transition text-sm">&times;</button>
+                )}
+              </div>
+            ))}
+            <p className="text-[11px] text-slate-400">Hint creator uses local actor: <span className="font-medium text-slate-600">user</span></p>
+          </div>
+          {error && <p className="text-xs text-rose-600">{error}</p>}
+          <div className="flex justify-end gap-2 mt-2">
+            <button type="button" onClick={onClose} className="px-4 py-2 text-sm text-slate-500 hover:bg-slate-50 rounded-xl transition">Cancel</button>
+            <button type="submit" disabled={creating || !title.trim() || !origin.trim() || !goal.trim()} className="px-5 py-2 text-sm bg-brand-500 text-white rounded-xl font-medium hover:bg-brand-600 transition disabled:opacity-30 shadow-sm shadow-brand-200">
+              {creating ? 'Creating...' : 'Create'}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+function RenameModal({
+  projectId,
+  currentTitle,
+  onClose,
+  onRenamed,
+}: {
+  projectId: string;
+  currentTitle: string;
+  onClose: () => void;
+  onRenamed: (title: string) => void;
+}) {
+  const [title, setTitle] = useState(currentTitle);
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center overlay" onClick={onClose}>
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg p-6 border border-slate-200/60 mx-4" onClick={(e) => e.stopPropagation()}>
+        <h3 className="text-base font-semibold text-slate-700 mb-1">Rename Project</h3>
+        <p className="text-xs text-slate-400 mb-4"><span className="font-mono text-slate-500">{projectId}</span> — {currentTitle}</p>
+        <div className="space-y-3">
+          <input
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter' && title.trim()) onRenamed(title.trim()); }}
+            className="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand-100 focus:border-brand-400 transition placeholder:text-slate-300"
+            placeholder="Project title"
+            autoFocus
+          />
+          <p className="text-[11px] text-slate-400">This only changes the project title and is allowed in any project status.</p>
+        </div>
+        <div className="flex justify-end gap-2 mt-5">
+          <button onClick={onClose} className="px-4 py-2 text-sm text-slate-500 hover:bg-slate-50 rounded-xl transition">Cancel</button>
+          <button onClick={() => { if (title.trim()) onRenamed(title.trim()); }} disabled={!title.trim()}
+            className="px-5 py-2 text-sm bg-slate-800 text-white rounded-xl font-medium hover:bg-slate-900 transition disabled:opacity-30 shadow-sm">Save</button>
+        </div>
+      </div>
     </div>
   );
 }
