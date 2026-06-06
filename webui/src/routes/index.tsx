@@ -36,6 +36,8 @@ const DeviceIntegrationPage = lazy(() => import('@/pages/DeviceIntegration'));
 const SystemLogPage = lazy(() => import('@/pages/SystemLog'));
 const FlocksproUpgradePage = lazy(() => import('@/pages/FlocksproUpgrade'));
 const FlocksproUpgradeCallbackPage = lazy(() => import('@/pages/FlocksproUpgrade/Callback'));
+const CairnProjectsPage = lazy(() => import('@/pages/CairnProjects'));
+const CairnProjectDetailPage = lazy(() => import('../pages/CairnProjects/Detail'));
 
 function LazyRoute({ children }: { children: React.ReactNode }) {
   return (
@@ -156,6 +158,10 @@ export function Routes() {
           path="flockspro-upgrade/callback"
           element={<AdminOnlyRoute><LazyRoute><FlocksproUpgradeCallbackPage /></LazyRoute></AdminOnlyRoute>}
         />
+
+        {/* Cairn: Blackboard-based multi-agent collaboration */}
+        <Route path="cairn" element={<LazyRoute><CairnProjectsPage /></LazyRoute>} />
+        <Route path="cairn/:id" element={<LazyRoute><CairnProjectDetailPage /></LazyRoute>} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </RouterRoutes>

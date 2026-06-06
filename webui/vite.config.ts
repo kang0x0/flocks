@@ -69,6 +69,10 @@ export default defineConfig({
           if (id.includes('/lucide-react/')) {
             return 'icons-vendor';
           }
+
+          if (id.includes('/cytoscape/') || id.includes('cytoscape-dagre')) {
+            return 'graph-vendor';
+          }
         },
       },
     },

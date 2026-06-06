@@ -15,7 +15,8 @@ from typing import Any, Callable, Optional
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request, Response, status
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import FileResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
 from fastapi.exceptions import RequestValidationError
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
@@ -182,7 +183,7 @@ async def lifespan(app: FastAPI):
     await _run_startup_phase(log, "storage.init", Storage.init)
     log.info("storage.initialized")
 
-    async def _recover_orphan_tool_parts() -> None:
+async def _recover_orphan_tool_parts() -> None:
         from flocks.session.orphan_tools import abort_all_orphan_running_parts
 
         repaired = await abort_all_orphan_running_parts()
@@ -195,6 +196,14 @@ async def lifespan(app: FastAPI):
         "session.recover_orphan_tools",
         _recover_orphan_tool_parts,
     )
+
+    # Initialize Cairn storage (blackboard-based multi-agent protocol)
+    try:
+        from flocks.cairn.storage import configure as configure_cairn_db
+        await _run_startup_phase(log, "cairn.storage.init", configure_cairn_db)
+        log.info("cairn.storage.initialized")
+    except Exception as e:
+        log.warning("cairn.storage.init_failed", {"error": str(e)})
 
     # Ensure default device room exists, then migrate legacy device API
     # configs from flocks.json → device_integrations table.
@@ -979,6 +988,8 @@ from flocks.server.routes.admin_users import router as admin_users_router
 from flocks.server.routes.notifications import router as notifications_router
 from flocks.server.routes.device import router as device_router
 from flocks.server.routes.console_upgrade import router as console_upgrade_router
+# Cairn: Blackboard-based multi-agent collaboration protocol
+from flocks.server.routes.cairn import router as cairn_router
 # Original routes with /api/ prefix
 app.include_router(health_router, prefix="/api", tags=["Health"])
 app.include_router(session_router, prefix="/api/session", tags=["Session"])
@@ -1039,67 +1050,20 @@ app.include_router(notifications_router, prefix="/api/notifications", tags=["Not
 app.include_router(device_router, prefix="/api/devices", tags=["Device"])
 app.include_router(console_upgrade_router, prefix="/api/console", tags=["ConsoleUpgrade"])
 
-# ============================================================
-# TUI Compatible Routes (without /api/ prefix)
-# These routes are needed for TUI client compatibility
-# ============================================================
+# Cairn: Blackboard-based multi-agent collaboration protocol
+app.include_router(cairn_router, tags=["Cairn"])
 
-# Global routes (/global/*)
-app.include_router(global_router, prefix="/global", tags=["Global"])
+# ---- Cairn UI (original Alpine.js SPA) ----
+CAIRN_STATIC_DIR = Path(__file__).parent.parent / "cairn" / "server" / "static"
 
-# Event routes (/event)
-app.include_router(event_router, prefix="/event", tags=["Event"])
 
-# Session routes (/session/*)
-app.include_router(session_router, prefix="/session", tags=["Session"])
+@app.get("/cairn-ui", include_in_schema=False)
+async def cairn_ui():
+    return FileResponse(CAIRN_STATIC_DIR / "index.html")
 
-# Provider routes (/provider/*)
-app.include_router(provider_router, prefix="/provider", tags=["Provider"])
 
-# Config routes (/config/*)
-app.include_router(config_router, prefix="/config", tags=["Config"])
-
-# Project routes (/project/*)
-app.include_router(project_router, prefix="/project", tags=["Project"])
-
-# File routes (/file/*)
-app.include_router(file_router, prefix="/file", tags=["File"])
-
-# MCP routes (/mcp/*)
-app.include_router(mcp_router, prefix="/mcp", tags=["MCP"])
-
-# Agent routes (/agent/* and /app/agent for TUI)
-app.include_router(agent_router, prefix="/agent", tags=["Agent"])
-app.include_router(agent_router, prefix="/app/agent", tags=["App-Agent"])
-
-# PTY routes (/pty/*)
-app.include_router(pty_router, prefix="/pty", tags=["PTY"])
-
-# LSP routes (/lsp/*)
-app.include_router(lsp_router, prefix="/lsp", tags=["LSP"])
-
-# Path routes (/path)
-app.include_router(path_router, prefix="/path", tags=["Path"])
-
-# VCS routes (/vcs)
-app.include_router(vcs_router, prefix="/vcs", tags=["VCS"])
-
-# Find routes (/find/*)
-app.include_router(find_router, prefix="/find", tags=["Find"])
-
-# Misc routes (various endpoints needed by TUI)
-app.include_router(misc_router, tags=["Misc"])
-
-# Permission routes (/permission)
-app.include_router(permission_router, prefix="/permission", tags=["Permission"])
-
-# Question routes (/question)
-app.include_router(question_router, prefix="/question", tags=["Question"])
-
-# TUI control routes (/tui/*)
-app.include_router(tui_router, prefix="/tui", tags=["TUI"])
-app.include_router(auth_router, prefix="/auth", tags=["Auth"])
-app.include_router(admin_users_router, prefix="/admin", tags=["Admin"])
+if CAIRN_STATIC_DIR.exists():
+    app.mount("/static", StaticFiles(directory=str(CAIRN_STATIC_DIR)), name="cairn_static")
 
 
 def _load_installed_package_plugins() -> None:

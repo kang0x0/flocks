@@ -21,6 +21,7 @@ import {
   ServerCog,
   ScrollText,
   ShieldCheck,
+  GitBranch,
 } from 'lucide-react';
 import { useState, useEffect, useLayoutEffect, useCallback, useMemo, useRef, lazy, Suspense } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -420,6 +421,7 @@ export default function Layout() {
           { name: t('workspace'), href: '/workspace', icon: FolderOpen },
           { name: t('tasks'), href: '/tasks', icon: ListTodo },
           { name: t('workflows'), href: '/workflows', icon: Workflow },
+          { name: t('cairnProjects'), href: '/cairn', icon: GitBranch },
         ],
       },
       {
@@ -456,7 +458,8 @@ export default function Layout() {
     matchPath('/workflows/:id/edit', location.pathname) ||
     matchPath('/workflows/:id', location.pathname) ||
     matchPath('/sessions', location.pathname) ||
-    matchPath('/devices', location.pathname);
+    matchPath('/devices', location.pathname) ||
+    matchPath('/cairn/:id', location.pathname);
   const productName = isFlocksproActive ? 'Flocks Pro' : 'Flocks';
   const displayVersion = isFlocksproActive
     ? flocksproVersion || (currentVersion ? formatProVersion(currentVersion) : null)

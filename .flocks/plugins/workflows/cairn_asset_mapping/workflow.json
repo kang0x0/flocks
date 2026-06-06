@@ -1,0 +1,84 @@
+{
+  "name": "cairn_asset_mapping",
+  "description": "Cairn Asset Mapping Workflow. Discovers and maps internet-facing assets: subdomains, open ports, web technologies, certificates, and IP relationships.",
+  "start": "bootstrap",
+  "nodes": [
+    {
+      "id": "bootstrap",
+      "type": "python",
+      "name": "Asset Mapping Bootstrap",
+      "description": "Initialize blackboard for asset mapping. Extract domain/IP from origin and prepare initial subdomain discovery intents.",
+      "code": "import json\n\norigin = inputs.get(\"origin\", {})\nif isinstance(origin, str):\n    origin = {\"description\": origin}\nif not isinstance(origin, dict):\n    origin = {\"description\": str(origin)}\n\n# Auto-set goal and success criteria if not provided\ngoal = inputs.get(\"goal\", \"\") or \"发现并列出所有公开资产，包括子域名、开放端口、Web 技术栈和证书信息\"\nsuccess_criteria = inputs.get(\"success_criteria\", [])\nif not success_criteria:\n    success_criteria = [\"2轮未发现新子域名\", \"所有存活主机完成常见端口扫描\", \"Web 技术栈已识别\"]\n\nmax_iterations = int(inputs.get(\"max_iterations\", 15))\n\ndesc = origin.get(\"description\", \"\")\npayload = origin.get(\"data_payload\", {})\norigin_type = \"\"\norigin_value = \"\"\n\nif payload:\n    origin_type = str(payload.get(\"type\", \"\"))\n    origin_value = str(payload.get(\"value\", \"\"))\n\n# Extract target from description as fallback\nif not origin_value and desc:\n    import re\n    maybe_ip = re.findall(r'(?:\\d{1,3}\\.){3}\\d{1,3}', desc)\n    maybe_domain = re.findall(r'([a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\\.)+[a-zA-Z]{2,}', desc)\n    if maybe_ip:\n        origin_type = \"ip\"\n        origin_value = maybe_ip[0]\n    elif maybe_domain:\n        origin_type = \"domain\"\n        origin_value = desc.split()[0]\n\ninitial_facts = []\nif desc:\n    initial_facts.append({\n        \"id\": \"fact_origin\",\n        \"type\": \"origin\",\n        \"content\": desc,\n        \"confidence\": 1.0,\n        \"source\": \"user_input\"\n    })\nif origin_value:\n    initial_facts.append({\n        \"id\": \"fact_target\",\n        \"type\": origin_type or \"unknown\",\n        \"content\": origin_value,\n        \"confidence\": 1.0,\n        \"source\": \"extracted_from_origin\"\n    })\n\n# Seed initial intents\ninitial_intents = []\nif origin_type == \"domain\" or origin_value:\n    initial_intents.append({\n        \"id\": \"intent_base_query\",\n        \"description\": f\"查询 {origin_value} 的基础情报信息（IP、Whois、证书、子域名）\",\n        \"required_tool_category\": \"domain\",\n        \"target\": origin_value,\n        \"priority\": \"high\",\n        \"rationale\": \"从根源目标开始发现关联资产\",\n        \"status\": \"pending\"\n    })\n\noutputs[\"origin\"] = origin\noutputs[\"goal\"] = goal\noutputs[\"success_criteria\"] = success_criteria\noutputs[\"facts\"] = initial_facts\noutputs[\"intents\"] = initial_intents\noutputs[\"completed_intents\"] = []\noutputs[\"iteration\"] = 0\noutputs[\"max_iterations\"] = max_iterations\noutputs[\"final_conclusion\"] = \"\"\noutputs[\"action_summary\"] = \"\"\noutputs[\"no_progress_count\"] = 0\noutputs[\"scenario_hints\"] = \"asset_mapping\"\noutputs[\"should_continue\"] = \"continue\"\n\nprint(f\"[Cairn/AssetMapping] Bootstrap: target={origin_type}={origin_value}\")\nprint(f\"[Cairn/AssetMapping] Goal: {goal[:80]}\")"
+    },
+    {
+      "id": "loop_check",
+      "type": "loop",
+      "name": "Loop Check",
+      "select_key": "should_continue",
+      "description": "Check should_continue: continue → run another cycle, exit → finalize"
+    },
+    {
+      "id": "cairn_cycle",
+      "type": "logic",
+      "name": "Asset Mapping Cycle",
+      "description": "## 角色\n你是 Cairn 资产测绘引擎。你的任务是在每次循环中，决定是执行排队中的 Intent 还是推理下一步动作。\n\n## 输入\n- facts: 已发现资产列表\n- intents: 待执行探索意图\n- completed_intents: 已完成意图\n- iteration / max_iterations\n- no_progress_count\n- goal / success_criteria\n\n## 执行逻辑\n\n### Phase A — 优先执行 intents\n如果 intents 中有待执行意图：\n1. 取出 intents[0]，调用合适的 tool.run(...)\n2. 用 llm.ask() 分析结果，提取结构化资产事实\n3. 将新事实追加到 facts，intent 标记 done 移入 completed_intents\n4. 重置 no_progress_count = 0\n5. 设置 should_continue = \"continue\"\n\n### Phase B — 推理生成新意图\n如果 intents 为空：\n1. 用 llm.ask() 分析 facts，生成下一步探索意图\n2. 要求 LLM 输出 JSON：\n```json\n{\n  \"assessment\": \"当前资产发现概况\",\n  \"no_more_assets\": true/false,\n  \"to_explore\": [\n    {\"target\": \"IP或域名\", \"type\": \"domain/ip\", \"reason\": \"为什么\", \"category\": \"threat_intel/port_scan/web_fingerprint/ip_lookup\"}\n  ]\n}\n```\n3. 如果 no_more_assets == true → should_continue = \"exit\"\n4. 否则将 to_explore 转成 intents\n\n### 工具使用指南\n根据 intent.category 选择工具：\n- category=domain, category在[\"domain\", \"subdomain\"] → threatbook_mcp_domain_query(domain=target)\n- category=ip 或在[\"ip\", \"ip_lookup\"] → threatbook_mcp_ip_query(ip=target)\n- category=\"web_fingerprint\", category=\"web\" → web_search(target)\n- category包含\"search\" → web_search(query=target)\n- 兜底：web_search\n\n### 资产发现收敛检测\n- 如果连续 2 轮没有发现新 IP 或新域名 → no_progress_count++\n- no_progress_count >= 3 → should_continue = \"exit\"（收敛）\n- iteration >= max_iterations → should_continue = \"exit\"\n\n## 输出约束\n必须设置：should_continue, facts, intents, completed_intents, iteration(透传不要改), final_conclusion(\"\"或完成总结), action_summary, no_progress_count\n\n注意：禁止 async/await。所有代码在顶层 exec 同步执行。"
+    },
+    {
+      "id": "advance",
+      "type": "python",
+      "name": "Advance Iteration",
+      "description": "Increment iteration counter for asset mapping.",
+      "code": "iteration = int(inputs.get(\"iteration\", 0)) + 1\nmax_iterations = int(inputs.get(\"max_iterations\", 15))\n\noutputs[\"iteration\"] = iteration\noutputs[\"should_continue\"] = \"exit\" if iteration >= max_iterations else inputs.get(\"should_continue\", \"continue\")\n\nfor key in [\"origin\", \"goal\", \"success_criteria\", \"facts\", \"intents\", \"completed_intents\",\n            \"final_conclusion\", \"action_summary\", \"scenario_hints\", \"no_progress_count\"]:\n    outputs[key] = inputs.get(key, [] if key in (\"facts\", \"intents\", \"completed_intents\", \"success_criteria\") else {} if key == \"origin\" else \"\")\n\nf_count = len(outputs[\"facts\"])\ni_count = len(outputs[\"intents\"])\nci_count = len(outputs[\"completed_intents\"])\nprint(f\"[Cairn/AssetMapping] Cycle {iteration}/{max_iterations}. Facts={f_count}, Pending={i_count}, Done={ci_count}\")"
+    },
+    {
+      "id": "finalize",
+      "type": "llm",
+      "name": "Generate Asset Map Report",
+      "prompt": "你是 Cairn 资产测绘报告生成器。根据以下资产发现结果生成结构化报告。\n\n## 原始目标\n{{ goal }}\n\n## 起始资产\n{{ origin }}\n\n## 已发现资产清单\n{% for f in facts %}\n- [{{ f.type }}] {{ f.content }} (置信度: {{ f.confidence }}, 来源: {{ f.source }})\n{% endfor %}\n\n## 已完成探索\n{% for ci in completed_intents %}\n- {{ ci.description }}{% if ci.status is defined %} ({{ ci.status }}){% endif %}\n{% endfor %}\n\n## 执行轮次\n{{ iteration }} 轮\n\n## 最终结论\n{{ final_conclusion }}\n\n---\n请生成包含以下章节的报告：\n1. **资产概况** — 发现总览\n2. **资产列表** — 按类型分类（域名/IP/端口/服务），每个资产附来源\n3. **关系拓扑** — IP 与域名的关联关系\n4. **探索轨迹** — 做了哪些查询\n5. **潜在风险** — 异常对外开放端口、过期证书等安全信号\n6. **下一步建议**",
+      "output_key": "final_report",
+      "model": ""
+    }
+  ],
+  "edges": [
+    {
+      "from": "bootstrap",
+      "to": "loop_check",
+      "order": 0
+    },
+    {
+      "from": "loop_check",
+      "to": "cairn_cycle",
+      "label": "continue",
+      "order": 0
+    },
+    {
+      "from": "loop_check",
+      "to": "finalize",
+      "label": "exit",
+      "order": 1
+    },
+    {
+      "from": "cairn_cycle",
+      "to": "advance",
+      "order": 0
+    },
+    {
+      "from": "advance",
+      "to": "loop_check",
+      "order": 0
+    }
+  ],
+  "metadata": {
+    "node_timeout_s": 600,
+    "sampleInputs": {
+      "origin": {
+        "description": "example.com",
+        "data_payload": {
+          "type": "domain",
+          "value": "example.com"
+        }
+      },
+      "max_iterations": 15
+    }
+  }
+}

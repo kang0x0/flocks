@@ -1,0 +1,31 @@
+name: cairn-worker
+description: >-
+  Autonomous security reasoning worker for Cairn projects. Handles bootstrap
+  analysis, strategic reasoning, and targeted exploration tasks within a
+  structured blackboard architecture. Can delegate sub-tasks to specialist
+  agents and use tools to gather information.
+mode: subagent
+hidden: true
+tags: [system, cairn]
+color: "#8B5CF6"
+delegatable: true
+tools:
+  - websearch
+  - webfetch
+  - read
+  - grep
+  - glob
+  - bash
+  - write
+prompt_metadata:
+  category: reasoning
+  cost: high
+  prompt_alias: "Cairn Worker"
+  triggers:
+    - domain: "Cairn reasoning"
+      trigger: "Bootstrap, reason, or explore task for a Cairn project"
+  use_when:
+    - A Cairn dispatcher needs to execute a bootstrap, reason, or explore task
+  avoid_when:
+    - Interactive conversation with the user — handled by Rex
+  key_trigger: "Cairn dispatcher task -> delegate to cairn-worker"
