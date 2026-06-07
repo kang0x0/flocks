@@ -3,7 +3,14 @@
   "description": "基于黑板的多智能体协作",
   "empty": {
     "title": "暂无项目",
-    "description": "Cairn 基于黑板（Blackboard）架构，多个智能体通过共享事实（Facts）、提出提示（Hints）并认领子意图（Intents）来协同推理与分工，从而更可靠地解决复杂推断任务。系统自动协调工作流并保留可追溯的决策记录。\n\n请填写起点、目标及可选提示定义任务的起点，即可启动协作。创建第一个 Cairn 项目，体验多智能体协同推理。"
+    "description": "Cairn 基于黑板（Blackboard）架构，多个智能体通过共享事实（Facts）、提出提示（Hints）并认领子意图（Intents）来协同推理与分工，从而更可靠地解决复杂推断任务。系统自动协调工作流并保留可追溯的决策记录。\n\n请填写起点、目标及可选提示定义任务的起点，即可启动协作。创建第一个 Cairn 项目，体验多智能体协同推理。",
+    "action": "创建项目开始探索"
+  },
+  "dispatcher": {
+    "autoOn": "自动：开",
+    "autoOff": "自动：关",
+    "startTooltip": "启动自动调度器",
+    "stopTooltip": "停止自动调度器"
   },
   "confirm": {
     "deleteTitle": "删除项目",
@@ -62,33 +69,23 @@
   },
   "create": {
     "open": "新建项目",
-    "title": "创建 Cairn 项目",
-    "subtitle": "填写项目标题、起点和目标，并可添加初始提示。"
+    "title": "创建 Cairn 项目"
   },
   "form": {
-    "titleLabel": "项目名称",
     "goalLabel": "目标",
     "originLabel": "起点",
     "hintsLabel": "初始提示",
-    "titlePlaceholder": "例如：分析自动驾驶碰撞原因",
-    "goalPlaceholder": "描述希望达到的目标",
-    "originPlaceholder": "描述项目的起始事实或假设",
-    "hintsPlaceholder": "每行一个提示，例如：'检查项目预算'、'考虑相关安全控制'",
-    "hintsHelp": "提示为可选输入，每行一个，帮助快速启动协作。",
     "creating": "创建中…",
     "hintContentPlaceholder": "策略建议或备注…",
     "concludePlaceholder": "发现了什么？（新事实）",
     "completePlaceholder": "为什么目标已达成？",
-    "reopenPlaceholder": "为什么该项目实际上未完成？",
     "renamePlaceholder": "项目标题",
     "renameHelp": "仅更改项目标题，可在任何项目状态下进行。"
   },
   "buttons": {
-    "refresh": "刷新",
     "create": "创建项目",
     "cancel": "取消",
     "delete": "删除",
-    "viewDetails": "查看详情 →",
     "backToList": "返回项目列表",
     "stop": "停止",
     "resume": "恢复",
@@ -101,33 +98,18 @@
     "declareClaim": "声明并认领",
     "conclude": "总结",
     "complete": "标记完成",
-    "addHint": "添加提示",
     "add": "添加",
-    "layout": "重置布局",
-    "fit": "适应",
     "all": "全部",
-    "stopAll": "停止 {{count}} 个活跃项目",
-    "run": "运行"
+    "stopAll": "停止 {{count}} 个活跃项目"
   },
   "stats": {
     "fact": "事实",
-    "intent": "意图",
-    "working": "进行中",
-    "unclaimed": "未认领",
-    "hints": "提示",
-    "trigger": "触发者",
-    "noFacts": "暂无事实",
-    "noIntents": "尚未创建任何意图。",
     "noHints": "暂无提示内容。",
-    "from": "来自",
-    "to": "指向",
-    "idPrefix": "ID:",
     "statusActive": "进行中",
     "statusStopped": "已停止",
     "statusCompleted": "已完成",
     "facts": "事实",
-    "intents": "意图",
-    "createdAt": "创建于"
+    "intents": "意图"
   },
   "detail": {
     "tabs": {
@@ -146,7 +128,9 @@
       "heartbeat": "心跳",
       "claimed": "已认领",
       "release": "释放",
-      "conclude": "总结"
+      "conclude": "总结",
+      "declare": "声明",
+      "declareClaim": "声明并认领"
     },
     "reason": {
       "running": "推理进行中",
@@ -171,25 +155,35 @@
     "selectedCount": "已选 {{count}} 项",
     "producedBy": "由以下产生",
     "noActivity": "暂无活动",
-    "replay": {
-      "label": "回放",
-      "playing": "播放中",
-      "paused": "已暂停",
-      "fast": "快速",
-      "normal": "正常",
-      "slow": "慢速",
-      "exit": "退出",
-      "restart": "重新开始"
-    },
-    "layout": {
-      "fit": "适应",
-      "dagre_tb": "Dagre ↓",
-      "dagre_lr": "Dagre →",
-      "klay_tb": "Klay ↓",
-      "klay_lr": "Klay →",
-      "elk_tb": "ELK ↓",
-      "elk_lr": "ELK →"
-    }
+    "fitGraph": "适应图形",
+    "exporting": "导出中…",
+    "remove": "移除",
+    "llmSessions": "LLM 会话",
+    "roleOrigin": "项目起点",
+    "roleGoal": "项目目标事实",
+    "originLabel": "起点",
+    "goalLabel": "目标",
+    "role": "角色",
+    "completedBy": "完成者",
+    "intentLabel": "意图",
+    "creatorLabel": "创建者",
+    "workerLabel": "操作者",
+    "heartbeatLabel": "心跳",
+    "createdLabel": "创建时间",
+    "concludedLabel": "总结时间",
+    "fromLabel": "来自",
+    "toLabel": "指向",
+    "noMessages": "暂无消息",
+    "noMessagesInSession": "此会话中暂无消息",
+    "workerSessions": "Worker LLM 会话",
+    "collapse": "收起",
+    "view": "查看",
+    "sequence": "序列",
+    "timeSpan": "时间跨度",
+    "user": "用户",
+    "assistant": "助手",
+    "input": "输入",
+    "output": "输出"
   },
   "modals": {
     "createIntent": {
@@ -202,32 +196,18 @@
       "title": "总结意图"
     },
     "complete": {
-      "title": "完成项目",
-      "subtitle": "将项目标记为已完成"
+      "title": "完成项目"
     },
     "hint": {
       "title": "添加提示"
     },
-    "reopen": {
-      "title": "重新打开项目"
-    },
+    "reopen": {},
     "rename": {
       "title": "重命名项目",
       "help": "仅更改项目标题，可在任何项目状态下进行。"
     },
     "preferences": {
-      "title": "本地偏好",
-      "actor": "操作者",
-      "layout": "默认布局",
-      "storedLocally": "仅存储在此浏览器。",
-      "close": "关闭",
-      "save": "保存"
-    },
-    "settings": {
-      "title": "服务器设置",
-      "intentTimeout": "意图超时（秒）",
-      "reasonTimeout": "推理超时（秒）",
-      "sharedConfig": "共享后端配置。"
+      "actor": "操作者"
     }
   }
 }

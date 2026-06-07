@@ -3,7 +3,14 @@
   "description": "Blackboard-based multi-agent collaboration",
   "empty": {
     "title": "No projects",
-    "description": "Cairn uses a Blackboard architecture where multiple agents collaboratively reason and divide work by sharing Facts, proposing Hints, and claiming sub-Intents. The system automatically coordinates workflows and maintains an auditable decision record for reliable complex reasoning.\n\nFill in an origin, goal, and optional hints to define a starting point. Create your first Cairn project to experience multi-agent collaborative reasoning."
+    "description": "Cairn uses a Blackboard architecture where multiple agents collaboratively reason and divide work by sharing Facts, proposing Hints, and claiming sub-Intents. The system automatically coordinates workflows and maintains an auditable decision record for reliable complex reasoning.\n\nFill in an origin, goal, and optional hints to define a starting point. Create your first Cairn project to experience multi-agent collaborative reasoning.",
+    "action": "Create a project to start exploring"
+  },
+  "dispatcher": {
+    "autoOn": "Auto: On",
+    "autoOff": "Auto: Off",
+    "startTooltip": "Start auto-dispatcher",
+    "stopTooltip": "Stop auto-dispatcher"
   },
   "confirm": {
     "deleteTitle": "Delete project",
@@ -62,33 +69,23 @@
   },
   "create": {
     "open": "New Project",
-    "title": "Create Cairn Project",
-    "subtitle": "Provide a title, origin, goal, and optional initial hints."
+    "title": "Create Cairn Project"
   },
   "form": {
-    "titleLabel": "Project name",
     "goalLabel": "Goal",
     "originLabel": "Origin",
     "hintsLabel": "Initial Hints",
-    "titlePlaceholder": "e.g. Analyze autonomous driving collision causes",
-    "goalPlaceholder": "Describe the goal you want to achieve",
-    "originPlaceholder": "Describe initial facts or assumptions",
-    "hintsPlaceholder": "One hint per line, e.g. 'check budget', 'consider security controls'",
-    "hintsHelp": "Hints are optional; one per line to help bootstrap collaboration.",
     "creating": "Creating…",
     "hintContentPlaceholder": "Strategy advice or note…",
     "concludePlaceholder": "What did you find? (new fact)",
     "completePlaceholder": "Why is the goal met?",
-    "reopenPlaceholder": "Why is this project not actually complete?",
     "renamePlaceholder": "Project title",
     "renameHelp": "Only changes the project title, allowed in any project status."
   },
   "buttons": {
-    "refresh": "Refresh",
     "create": "Create Project",
     "cancel": "Cancel",
     "delete": "Delete",
-    "viewDetails": "View details →",
     "backToList": "Back to projects",
     "stop": "Stop",
     "resume": "Resume",
@@ -101,39 +98,21 @@
     "declareClaim": "Declare & Claim",
     "conclude": "Conclude",
     "complete": "Complete",
-    "addHint": "Add Hint",
     "add": "Add",
-    "layout": "Reset Layout",
-    "fit": "Fit",
     "all": "All",
-    "stopAll": "Stop {{count}} Active",
-    "run": "Run"
+    "stopAll": "Stop {{count}} Active"
   },
   "stats": {
     "fact": "Facts",
-    "intent": "Intents",
-    "working": "Working",
-    "unclaimed": "Unclaimed",
-    "hints": "Hints",
-    "trigger": "Trigger",
-    "noFacts": "No facts yet",
-    "noIntents": "No intents created yet.",
     "noHints": "No hints available.",
-    "from": "from",
-    "to": "to",
-    "idPrefix": "ID:",
     "statusActive": "Active",
     "statusStopped": "Stopped",
     "statusCompleted": "Completed",
     "facts": "facts",
-    "intents": "intents",
-    "createdAt": "Created"
+    "intents": "intents"
   },
   "detail": {
     "tabs": {
-      "flow": "Flow",
-      "facts": "Facts",
-      "intents": "Intents",
       "hints": "Hints",
       "log": "Log",
       "detail": "Detail"
@@ -146,50 +125,48 @@
       "heartbeat": "Heartbeat",
       "claimed": "Claimed",
       "release": "Release",
-      "conclude": "Conclude"
+      "conclude": "Conclude",
+      "declare": "Declare",
+      "declareClaim": "Declare & Claim"
     },
     "reason": {
       "running": "Reason Running",
       "trigger": "Trigger",
       "heartbeat": "Heartbeat"
     },
-    "canvas": {
-      "factLabel": "Fact",
-      "originHint": "Project starting point",
-      "goalHint": "Project target fact",
-      "claimed": "Claimed",
-      "unclaimed": "Unclaimed",
-      "inProgress": "In Progress",
-      "concluded": "Concluded",
-      "claim": "Claim",
-      "conclude": "Conclude",
-      "release": "Release",
-      "selected": "Selected"
-    },
+    "noActivity": "No activity yet",
     "clickNodeHint": "Click a node or edge",
     "shiftSelectHint": "Shift+click for multi-select",
-    "selectedCount": "{{count}} selected",
     "producedBy": "Produced by",
-    "noActivity": "No activity yet",
-    "replay": {
-      "label": "Replay",
-      "playing": "Playing",
-      "paused": "Paused",
-      "fast": "Fast",
-      "normal": "Normal",
-      "slow": "Slow",
-      "exit": "Exit",
-      "restart": "Restart"
-    },
-    "layout": {
-      "fit": "Fit",
-      "dagre_tb": "Dagre ↓",
-      "dagre_lr": "Dagre →",
-      "klay_tb": "Klay ↓",
-      "klay_lr": "Klay →",
-      "elk_tb": "ELK ↓",
-      "elk_lr": "ELK →"
-    }
+    "fitGraph": "Fit graph",
+    "exporting": "Exporting…",
+    "remove": "Remove",
+    "llmSessions": "LLM Sessions",
+    "roleOrigin": "Project starting point",
+    "roleGoal": "Project target fact",
+    "originLabel": "Origin",
+    "goalLabel": "Goal",
+    "role": "Role",
+    "completedBy": "Completed By",
+    "intentLabel": "Intent",
+    "creatorLabel": "Creator",
+    "workerLabel": "Worker",
+    "heartbeatLabel": "Heartbeat",
+    "createdLabel": "Created",
+    "concludedLabel": "Concluded",
+    "fromLabel": "From",
+    "toLabel": "To",
+    "noMessages": "No messages",
+    "noMessagesInSession": "No messages in this session",
+    "workerSessions": "Worker LLM Sessions",
+    "collapse": "Collapse",
+    "view": "View",
+    "sequence": "Sequence",
+    "timeSpan": "Time Span",
+    "user": "User",
+    "assistant": "Assistant",
+    "input": "Input",
+    "output": "Output"
   },
   "modals": {
     "createIntent": {
@@ -202,32 +179,18 @@
       "title": "Conclude Intent"
     },
     "complete": {
-      "title": "Complete Project",
-      "subtitle": "Mark project as completed"
+      "title": "Complete Project"
     },
     "hint": {
       "title": "Add Hint"
     },
-    "reopen": {
-      "title": "Reopen Project"
-    },
+    "reopen": {},
     "rename": {
       "title": "Rename Project",
       "help": "Only changes the project title, allowed in any project status."
     },
     "preferences": {
-      "title": "Local Preferences",
-      "actor": "Actor",
-      "layout": "Default layout",
-      "storedLocally": "Stored only in this browser.",
-      "close": "Close",
-      "save": "Save"
-    },
-    "settings": {
-      "title": "Server Settings",
-      "intentTimeout": "Intent timeout (seconds)",
-      "reasonTimeout": "Reason timeout (seconds)",
-      "sharedConfig": "Shared backend configuration."
+      "actor": "Actor"
     }
   }
 }

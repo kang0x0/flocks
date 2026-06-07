@@ -183,7 +183,7 @@ async def lifespan(app: FastAPI):
     await _run_startup_phase(log, "storage.init", Storage.init)
     log.info("storage.initialized")
 
-async def _recover_orphan_tool_parts() -> None:
+    async def _recover_orphan_tool_parts() -> None:
         from flocks.session.orphan_tools import abort_all_orphan_running_parts
 
         repaired = await abort_all_orphan_running_parts()

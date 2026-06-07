@@ -1,4 +1,5 @@
 import { useEffect, useState, useMemo, useCallback, useRef } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useParams, useNavigate } from 'react-router-dom';
 import cytoscape, { type Core, type EventObject } from 'cytoscape';
 import dagre from 'cytoscape-dagre';
@@ -226,6 +227,7 @@ function formatDateOnly(ts: string): string {
 
 export default function CairnProjectDetail() {
   const { id } = useParams<{ id: string }>();
+  const { t } = useTranslation('cairn');
   const navigate = useNavigate();
   const cyRef = useRef<Core | null>(null);
   const cyContainerRef = useRef<HTMLDivElement>(null);
@@ -1107,9 +1109,9 @@ export default function CairnProjectDetail() {
 
   const selectedIntentPrimaryActionLabel = useCallback(() => {
     const intent = selectedOpenIntentRecord();
-    if (!intent || !intent.worker) return 'Claim';
-    return intent.worker === actorName ? 'Heartbeat' : 'Claimed';
-  }, [selectedOpenIntentRecord]);
+    if (!intent || !intent.worker) return t('detail.actions.claim');
+    return intent.worker === actorName ? t('detail.actions.heartbeat') : t('detail.actions.claimed');
+  }, [selectedOpenIntentRecord, t]);
 
   const isActive = meta?.status === 'active';
   const isCompleted = meta?.status === 'completed';
@@ -1249,7 +1251,7 @@ export default function CairnProjectDetail() {
         <div className="max-w-md text-center">
           <button onClick={() => navigate('/cairn')} className="inline-flex items-center text-sm text-slate-500 hover:text-slate-700 mb-4 transition">
             <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M15 19l-7-7 7-7"/></svg>
-            Back to projects
+            {t('buttons.backToList')}
           </button>
           <div className="flex items-center gap-2 p-4 bg-rose-50 border border-rose-200 rounded-xl text-rose-700 text-sm">
             <svg className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 8v4m0 4h.01"/></svg>
@@ -1279,13 +1281,13 @@ export default function CairnProjectDetail() {
         </div>
         <div className="flex-1" />
         <div className="flex items-center gap-4 text-xs text-slate-400">
-          <span>{facts.length} facts</span>
-          <span>{intents.length} intents</span>
+          <span>{t('stats.facts', { count: facts.length })}</span>
+          <span>{t('stats.intents', { count: intents.length })}</span>
         </div>
         <div className="flex items-center gap-1.5">
           <button onClick={handleSnapshot} disabled={snapshotLoading} className="px-2.5 py-1 rounded-lg border border-slate-200 text-xs text-slate-500 hover:bg-slate-50 hover:text-slate-700 transition flex items-center gap-1.5">
             <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="1.7" viewBox="0 0 24 24"><path d="M14.25 3H7.5A2.25 2.25 0 0 0 5.25 5.25v13.5A2.25 2.25 0 0 0 7.5 21h9a2.25 2.25 0 0 0 2.25-2.25V8.25L14.25 3Z"/><path d="M14.25 3v5.25h4.5"/><path d="M8.25 12h7.5M8.25 15h5.25"/></svg>
-            {snapshotLoading ? 'Exporting...' : 'Snapshot'}
+            {snapshotLoading ? t('detail.exporting') : t('buttons.snapshot')}
           </button>
           {!isCompleted && (
             <button onClick={isActive ? handleStop : handleResume}
@@ -1295,21 +1297,21 @@ export default function CairnProjectDetail() {
                   : 'border-teal-200 text-teal-600 hover:bg-teal-50'
               }`}>
               {isActive ? (
-                <><svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="1.9" viewBox="0 0 24 24"><path d="M6 6h12v12H6z"/></svg>Stop</>
+                <><svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="1.9" viewBox="0 0 24 24"><path d="M6 6h12v12H6z"/></svg>{t('buttons.stop')}</>
               ) : (
-                <><svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="1.9" viewBox="0 0 24 24"><path d="m8 5 11 7-11 7V5Z"/></svg>Resume</>
+                <><svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="1.9" viewBox="0 0 24 24"><path d="m8 5 11 7-11 7V5Z"/></svg>{t('buttons.resume')}</>
               )}
             </button>
           )}
           {isCompleted && (
             <button onClick={handleReopen} className="px-2.5 py-1 rounded-lg border border-sky-200 text-xs text-sky-600 hover:bg-sky-50 transition flex items-center gap-1.5">
               <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="1.8" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 3-6.708"/><path d="M3 3v6h6"/></svg>
-              Reopen
+              {t('buttons.reopen')}
             </button>
           )}
           <button onClick={handleDelete} className="px-2.5 py-1 rounded-lg border border-rose-200 text-xs text-rose-500 hover:bg-rose-50 hover:text-rose-600 transition flex items-center gap-1.5">
             <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="1.8" viewBox="0 0 24 24"><path d="M3 6h18"/><path d="M8 6V4.75A1.75 1.75 0 0 1 9.75 3h4.5A1.75 1.75 0 0 1 16 4.75V6"/><path d="M19 6l-.63 11.338A2 2 0 0 1 16.37 19.5H7.63a2 2 0 0 1-1.997-2.162L5 6"/><path d="M10 10.5v5"/><path d="M14 10.5v5"/></svg>
-            Delete
+            {t('buttons.delete')}
           </button>
         </div>
       </header>
@@ -1317,7 +1319,7 @@ export default function CairnProjectDetail() {
       <div className="flex-1 flex overflow-hidden">
         <div className="flex-1 relative min-w-0">
           <div className="absolute top-3 left-3 z-10 flex items-center gap-1.5">
-            <button onClick={fitGraph} className="h-7 w-7 bg-white/90 backdrop-blur rounded-lg shadow-sm border border-slate-200/60 text-slate-500 hover:text-slate-700 hover:bg-white transition inline-flex items-center justify-center" title="Fit graph">
+            <button onClick={fitGraph} className="h-7 w-7 bg-white/90 backdrop-blur rounded-lg shadow-sm border border-slate-200/60 text-slate-500 hover:text-slate-700 hover:bg-white transition inline-flex items-center justify-center" title={t('detail.fitGraph')}>
               <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="1.7" viewBox="0 0 24 24"><path d="M8 3H5a2 2 0 0 0-2 2v3"/><path d="M16 3h3a2 2 0 0 1 2 2v3"/><path d="M8 21H5a2 2 0 0 1-2-2v-3"/><path d="M16 21h3a2 2 0 0 0 2-2v-3"/></svg>
             </button>
             <select value={layoutMode} onChange={(e) => setLayoutMode(e.target.value)}
@@ -1335,11 +1337,11 @@ export default function CairnProjectDetail() {
                     <span className="absolute inset-[-6px] rounded-full border-[1.5px] border-sky-300/34 animate-ping opacity-75"></span>
                   </span>
                   <div className="min-w-0">
-                    <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-sky-500">Reason Running</div>
+                    <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-sky-500">{t('detail.reason.running')}</div>
                     <div className="mt-0.5 text-sm font-semibold text-slate-700 truncate">{meta.reason?.worker}</div>
                     <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-slate-500">
-                      {meta.reason?.trigger && <span>Trigger {meta.reason.trigger}</span>}
-                      <span>Heartbeat {formatTime(meta.reason?.last_heartbeat_at ?? null)}</span>
+                      {meta.reason?.trigger && <span>{t('detail.reason.trigger')} {meta.reason.trigger}</span>}
+                      <span>{t('detail.reason.heartbeat')} {formatTime(meta.reason?.last_heartbeat_at ?? null)}</span>
                     </div>
                   </div>
                 </div>
@@ -1353,19 +1355,19 @@ export default function CairnProjectDetail() {
                 <button onClick={() => setShowIntentModal(true)}
                   className="px-3 py-1.5 bg-white/90 backdrop-blur border border-brand-200 text-brand-600 rounded-lg shadow-sm text-xs font-medium hover:bg-brand-50 transition flex items-center gap-1">
                   <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M5 12h14"/><path d="m13 6 6 6-6 6"/></svg>
-                  Intent
+                  {t('detail.actions.intent')}
                 </button>
                 <button onClick={handleComplete}
                   className="px-3 py-1.5 bg-white/90 backdrop-blur border border-teal-200 text-teal-600 rounded-lg shadow-sm text-xs font-medium hover:bg-teal-50 transition flex items-center gap-1">
                   <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z"/></svg>
-                  Complete
+                  {t('detail.actions.complete')}
                 </button>
               </div>
               <div className="flex gap-1.5">
                 <button onClick={() => setShowHintModal(true)}
                   className="px-3 py-1.5 bg-white/90 backdrop-blur border border-amber-200 text-amber-600 rounded-lg shadow-sm text-xs font-medium hover:bg-amber-50 transition flex items-center gap-1">
                   <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 1 1 7.072 0l-.548.547A3.374 3.374 0 0 0 14 18.469V19a2 2 0 1 1-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547Z"/></svg>
-                  Hint
+                  {t('detail.actions.hint')}
                 </button>
               </div>
               <div className="flex gap-1.5">
@@ -1377,12 +1379,12 @@ export default function CairnProjectDetail() {
                 <button onClick={handleIntentRelease} disabled={!selectedReleasableOpenIntentRecord()}
                   className="px-3 py-1.5 bg-white/90 backdrop-blur border border-amber-200 text-amber-700 rounded-lg shadow-sm text-xs font-medium hover:bg-amber-50 transition disabled:opacity-30 disabled:cursor-not-allowed flex items-center gap-1">
                   <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M9 10V7.75A3.75 3.75 0 1 1 16.5 7"/><path d="M7.5 10.5h9A1.5 1.5 0 0 1 18 12v6A1.5 1.5 0 0 1 16.5 19.5h-9A1.5 1.5 0 0 1 6 18v-6A1.5 1.5 0 0 1 7.5 10.5Z"/><path d="M12 14.25v1.5"/></svg>
-                  Release
+                  {t('detail.actions.release')}
                 </button>
                 <button onClick={handleOpenConclude} disabled={!selectedActionableOpenIntentRecord()}
                   className="px-3 py-1.5 bg-white/90 backdrop-blur border border-teal-200 text-teal-600 rounded-lg shadow-sm text-xs font-medium hover:bg-teal-50 transition disabled:opacity-30 disabled:cursor-not-allowed flex items-center gap-1">
                   <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M14.25 3H7.5A2.25 2.25 0 0 0 5.25 5.25v13.5A2.25 2.25 0 0 0 7.5 21h9a2.25 2.25 0 0 0 2.25-2.25V8.25L14.25 3Z"/><path d="M14.25 3v5.25h4.5"/><path d="M9 13.5 10.875 15.375 15 11.25"/></svg>
-                  Conclude
+                  {t('detail.actions.conclude')}
                 </button>
               </div>
             </div>
@@ -1420,15 +1422,15 @@ export default function CairnProjectDetail() {
           <div className="flex border-b border-slate-100 shrink-0">
             <button onClick={() => setSideTab('detail')}
               className={`flex-1 px-3 py-2.5 text-xs font-medium transition ${sideTab === 'detail' ? 'text-brand-600 border-b-2 border-brand-500' : 'text-slate-400 hover:text-slate-600'}`}>
-              Detail
+              {t('detail.tabs.detail')}
             </button>
             <button onClick={() => setSideTab('hints')}
               className={`flex-1 px-3 py-2.5 text-xs font-medium transition ${sideTab === 'hints' ? 'text-brand-600 border-b-2 border-brand-500' : 'text-slate-400 hover:text-slate-600'}`}>
-              Hints <span className="ml-0.5 text-[10px] opacity-60">{hints.length}</span>
+              {t('detail.tabs.hints')} <span className="ml-0.5 text-[10px] opacity-60">{hints.length}</span>
             </button>
             <button onClick={() => setSideTab('log')}
               className={`flex-1 px-3 py-2.5 text-xs font-medium transition ${sideTab === 'log' ? 'text-brand-600 border-b-2 border-brand-500' : 'text-slate-400 hover:text-slate-600'}`}>
-              Log
+              {t('detail.tabs.log')}
             </button>
           </div>
 
@@ -1436,8 +1438,8 @@ export default function CairnProjectDetail() {
             <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-slate-50/40">
               {(!selectedNodeId || !selectedNodeType) && (
                 <div className="rounded-2xl border border-dashed border-slate-200 bg-white/80 px-5 py-10 text-center shadow-sm">
-                  <p className="text-sm text-slate-400">Click a node or edge</p>
-                  <p className="text-xs text-slate-300 mt-1">Shift+click for multi-select</p>
+                  <p className="text-sm text-slate-400">{t('detail.clickNodeHint')}</p>
+                  <p className="text-xs text-slate-300 mt-1">{t('detail.shiftSelectHint')}</p>
                 </div>
               )}
 
@@ -1455,10 +1457,10 @@ export default function CairnProjectDetail() {
                                 fact.id === 'goal' ? 'bg-rose-50 text-rose-600' :
                                 'bg-brand-50 text-brand-700'
                               }`}>{fact.id}</span>
-                              <span className="text-[11px] text-slate-400 uppercase tracking-wider">Fact</span>
+                              <span className="text-[11px] text-slate-400 uppercase tracking-wider">{t('stats.fact')}</span>
                             </div>
                             <button onClick={() => setSelectedFacts((prev) => { const n = new Set(prev); n.delete(fact.id); return n; })}
-                              className="text-[11px] text-slate-400 hover:text-slate-600 transition">Remove</button>
+                              className="text-[11px] text-slate-400 hover:text-slate-600 transition">{t('detail.remove')}</button>
                           </div>
                         </div>
                         <div className="p-4">
@@ -1479,7 +1481,7 @@ export default function CairnProjectDetail() {
                         selectedNodeId === 'goal' ? 'bg-rose-50 text-rose-600' :
                         'bg-brand-50 text-brand-700'
                       }`}>{selectedNodeId}</span>
-                      <span className="text-[11px] text-slate-400 font-medium uppercase tracking-wider">Fact</span>
+                      <span className="text-[11px] text-slate-400 font-medium uppercase tracking-wider">{t('stats.fact')}</span>
                     </div>
                   </div>
                   <div className="p-4 space-y-4">
@@ -1487,20 +1489,20 @@ export default function CairnProjectDetail() {
                     <div className="space-y-3 text-xs">
                       {selectedNodeId === 'origin' && (
                         <div className="pt-4 border-t border-slate-100">
-                          <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-widest mb-3">Origin</p>
-                          <div className="flex items-start justify-between gap-3"><span className="text-slate-400 shrink-0">Role</span><span className="text-slate-600 text-right break-words">Project starting point</span></div>
+                          <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-widest mb-3">{t('detail.originLabel')}</p>
+                          <div className="flex items-start justify-between gap-3"><span className="text-slate-400 shrink-0">{t('detail.role')}</span><span className="text-slate-600 text-right break-words">{t('detail.roleOrigin')}</span></div>
                         </div>
                       )}
                       {selectedNodeId === 'goal' && (() => {
                         const producingIntent = getProducingIntent('goal', intents);
                         return (
                           <div className="pt-4 border-t border-slate-100 space-y-3">
-                            <p className="text-[10px] font-semibold text-rose-500 uppercase tracking-widest">Goal</p>
-                            <div className="flex items-start justify-between gap-3"><span className="text-slate-400 shrink-0">Role</span><span className="text-slate-600 text-right break-words">Project target fact</span></div>
+                            <p className="text-[10px] font-semibold text-rose-500 uppercase tracking-widest">{t('detail.goalLabel')}</p>
+                            <div className="flex items-start justify-between gap-3"><span className="text-slate-400 shrink-0">{t('detail.role')}</span><span className="text-slate-600 text-right break-words">{t('detail.roleGoal')}</span></div>
                             {producingIntent && (
                               <>
-                                <div className="flex items-start justify-between gap-3"><span className="text-slate-400 shrink-0">Completed By</span><span className="font-mono text-slate-600 text-right break-all">{producingIntent.id}</span></div>
-                                <div className="flex items-start justify-between gap-3"><span className="text-slate-400 shrink-0">Worker</span><span className="text-slate-600 text-right break-all">{producingIntent.worker || '—'}</span></div>
+                                <div className="flex items-start justify-between gap-3"><span className="text-slate-400 shrink-0">{t('detail.completedBy')}</span><span className="font-mono text-slate-600 text-right break-all">{producingIntent.id}</span></div>
+                                <div className="flex items-start justify-between gap-3"><span className="text-slate-400 shrink-0">{t('detail.workerLabel')}</span><span className="text-slate-600 text-right break-all">{producingIntent.worker || '—'}</span></div>
                               </>
                             )}
                           </div>
@@ -1510,11 +1512,11 @@ export default function CairnProjectDetail() {
                         const producingIntent = getProducingIntent(selectedNodeId!, intents);
                         return producingIntent ? (
                           <div className="pt-4 border-t border-slate-100 space-y-3">
-                            <p className="text-[10px] font-semibold text-brand-500 uppercase tracking-widest">Produced By</p>
-                            <div className="flex items-start justify-between gap-3"><span className="text-slate-400 shrink-0">Intent</span><span className="font-mono text-slate-600 text-right break-all">{producingIntent.id}</span></div>
-                            <div className="flex items-start justify-between gap-3"><span className="text-slate-400 shrink-0">From</span><span className="font-mono text-slate-600 text-right break-all">{producingIntent.from.join(', ')}</span></div>
-                            <div className="flex items-start justify-between gap-3"><span className="text-slate-400 shrink-0">Creator</span><span className="text-slate-600 text-right break-all">{producingIntent.creator}</span></div>
-                            <div className="flex items-start justify-between gap-3"><span className="text-slate-400 shrink-0">Worker</span><span className="text-slate-600 text-right break-all">{producingIntent.worker || '—'}</span></div>
+                            <p className="text-[10px] font-semibold text-brand-500 uppercase tracking-widest">{t('detail.producedBy')}</p>
+                            <div className="flex items-start justify-between gap-3"><span className="text-slate-400 shrink-0">{t('detail.intentLabel')}</span><span className="font-mono text-slate-600 text-right break-all">{producingIntent.id}</span></div>
+                            <div className="flex items-start justify-between gap-3"><span className="text-slate-400 shrink-0">{t('detail.fromLabel')}</span><span className="font-mono text-slate-600 text-right break-all">{producingIntent.from.join(', ')}</span></div>
+                            <div className="flex items-start justify-between gap-3"><span className="text-slate-400 shrink-0">{t('detail.creatorLabel')}</span><span className="text-slate-600 text-right break-all">{producingIntent.creator}</span></div>
+                            <div className="flex items-start justify-between gap-3"><span className="text-slate-400 shrink-0">{t('detail.workerLabel')}</span><span className="text-slate-600 text-right break-all">{producingIntent.worker || '—'}</span></div>
                           </div>
                         ) : null;
                       })()}
@@ -1522,7 +1524,7 @@ export default function CairnProjectDetail() {
                     {/* Related session logs for this fact */}
                     {relatedSessionLogs.length > 0 && (
                       <div className="pt-4 border-t border-slate-100 space-y-2">
-                        <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-widest mb-2">LLM Sessions</p>
+                        <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-widest mb-2">{t('detail.llmSessions')}</p>
                         {relatedSessionLogs.map((log) => (
                           <SessionLogMiniCard key={log.id} log={log} onToggle={handleToggleSession} expandedSessions={expandedSessions} />
                         ))}
@@ -1545,20 +1547,20 @@ export default function CairnProjectDetail() {
                   <div className="p-4 space-y-4">
                     <p className="text-sm text-slate-700 leading-relaxed whitespace-pre-wrap break-words">{selectedIntentRecord()!.description}</p>
                     <div className="pt-4 border-t border-slate-100 space-y-3 text-xs">
-                      <div className="flex items-start justify-between gap-3"><span className="text-slate-400 shrink-0">From</span><span className="font-mono text-slate-600 text-right break-all">{selectedIntentRecord()!.from.join(', ')}</span></div>
-                      <div className="flex items-start justify-between gap-3"><span className="text-slate-400 shrink-0">To</span><span className="font-mono text-slate-600 text-right break-all">{selectedIntentRecord()!.to || '—'}</span></div>
-                      <div className="flex items-start justify-between gap-3"><span className="text-slate-400 shrink-0">Creator</span><span className="text-slate-600 text-right break-all">{selectedIntentRecord()!.creator}</span></div>
-                      <div className="flex items-start justify-between gap-3"><span className="text-slate-400 shrink-0">Worker</span><span className="text-slate-600 text-right break-all">{selectedIntentRecord()!.worker || '—'}</span></div>
-                      <div className="flex items-start justify-between gap-3"><span className="text-slate-400 shrink-0">Heartbeat</span><span className="text-slate-600 text-right break-words">{selectedIntentRecord()!.last_heartbeat_at ? formatTime(selectedIntentRecord()!.last_heartbeat_at) : '—'}</span></div>
-                      <div className="flex items-start justify-between gap-3"><span className="text-slate-400 shrink-0">Created</span><span className="text-slate-600 text-right break-words">{formatTime(selectedIntentRecord()!.created_at)}</span></div>
+                      <div className="flex items-start justify-between gap-3"><span className="text-slate-400 shrink-0">{t('detail.fromLabel')}</span><span className="font-mono text-slate-600 text-right break-all">{selectedIntentRecord()!.from.join(', ')}</span></div>
+                      <div className="flex items-start justify-between gap-3"><span className="text-slate-400 shrink-0">{t('detail.toLabel')}</span><span className="font-mono text-slate-600 text-right break-all">{selectedIntentRecord()!.to || '—'}</span></div>
+                      <div className="flex items-start justify-between gap-3"><span className="text-slate-400 shrink-0">{t('detail.creatorLabel')}</span><span className="text-slate-600 text-right break-all">{selectedIntentRecord()!.creator}</span></div>
+                      <div className="flex items-start justify-between gap-3"><span className="text-slate-400 shrink-0">{t('detail.workerLabel')}</span><span className="text-slate-600 text-right break-all">{selectedIntentRecord()!.worker || '—'}</span></div>
+                      <div className="flex items-start justify-between gap-3"><span className="text-slate-400 shrink-0">{t('detail.heartbeatLabel')}</span><span className="text-slate-600 text-right break-words">{selectedIntentRecord()!.last_heartbeat_at ? formatTime(selectedIntentRecord()!.last_heartbeat_at) : '—'}</span></div>
+                      <div className="flex items-start justify-between gap-3"><span className="text-slate-400 shrink-0">{t('detail.createdLabel')}</span><span className="text-slate-600 text-right break-words">{formatTime(selectedIntentRecord()!.created_at)}</span></div>
                       {selectedIntentRecord()!.concluded_at && (
-                        <div className="flex items-start justify-between gap-3"><span className="text-slate-400 shrink-0">Concluded</span><span className="text-slate-600 text-right break-words">{formatTime(selectedIntentRecord()!.concluded_at)}</span></div>
+                        <div className="flex items-start justify-between gap-3"><span className="text-slate-400 shrink-0">{t('detail.concludedLabel')}</span><span className="text-slate-600 text-right break-words">{formatTime(selectedIntentRecord()!.concluded_at)}</span></div>
                       )}
                     </div>
                     {/* Related session logs for this intent */}
                     {relatedSessionLogs.length > 0 && (
                       <div className="pt-4 border-t border-slate-100 space-y-2">
-                        <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-widest mb-2">LLM Sessions</p>
+                        <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-widest mb-2">{t('detail.llmSessions')}</p>
                         {relatedSessionLogs.map((log) => (
                           <SessionLogMiniCard key={log.id} log={log} onToggle={handleToggleSession} expandedSessions={expandedSessions} />
                         ))}
@@ -1574,7 +1576,7 @@ export default function CairnProjectDetail() {
             <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-amber-50/25">
               {hints.length === 0 ? (
                 <div className="rounded-2xl border border-dashed border-amber-200 bg-white/80 px-5 py-10 text-center shadow-sm">
-                  <p className="text-sm text-slate-300">No hints yet</p>
+                  <p className="text-sm text-slate-300">{t('stats.noHints')}</p>
                 </div>
               ) : (
                 hints.map((h) => (
@@ -1606,7 +1608,7 @@ export default function CairnProjectDetail() {
         <div className="space-y-2.5">
           <div className="space-y-1">
             <div className="flex items-center justify-between gap-3 text-[11px]">
-              <span className="text-slate-400">Sequence</span>
+              <span className="text-slate-400">{t('detail.sequence')}</span>
               <span className="font-mono text-slate-600">
                 {buildTimelineEvents(project).length} / {buildTimelineEvents(project).length}
               </span>
@@ -1617,7 +1619,7 @@ export default function CairnProjectDetail() {
           </div>
           <div className="space-y-1">
             <div className="flex items-center justify-between gap-3 text-[11px]">
-              <span className="text-slate-400">Time Span</span>
+              <span className="text-slate-400">{t('detail.timeSpan')}</span>
               <span className="font-mono text-slate-600 text-right">
                 {(() => {
                   const events = buildTimelineEvents(project);
@@ -1639,7 +1641,7 @@ export default function CairnProjectDetail() {
       </section>
     )}
     {buildTimelineEvents(project).length === 0 && sessionLogs.length === 0 ? (
-      <p className="text-sm text-slate-300 text-center mt-12">No activity yet</p>
+      <p className="text-sm text-slate-300 text-center mt-12">{t('detail.noActivity')}</p>
     ) : (
       <>
         {/* Timeline entries */}
@@ -1674,7 +1676,7 @@ export default function CairnProjectDetail() {
           <>
             <div className="flex items-center gap-2 pt-4 pb-1">
               <div className="h-px flex-1 bg-slate-100"></div>
-              <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-widest">Worker LLM Sessions</span>
+              <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-widest">{t('detail.workerSessions')}</span>
               <div className="h-px flex-1 bg-slate-100"></div>
             </div>
             {sessionLogs.map((log) => (
@@ -1690,13 +1692,13 @@ export default function CairnProjectDetail() {
       </div>
 
       {showHintModal && (
-        <ModalBase title="Add Hint" onClose={() => setShowHintModal(false)}>
+        <ModalBase title={t('modals.hint.title')} onClose={() => setShowHintModal(false)}>
           <HintFormContent projectId={id!} onClose={() => setShowHintModal(false)} onAdded={() => { setShowHintModal(false); loadProject(); }} />
         </ModalBase>
       )}
 
       {showIntentModal && (
-        <ModalBase title="New Intent" onClose={() => setShowIntentModal(false)}>
+        <ModalBase title={t('modals.createIntent.title')} onClose={() => setShowIntentModal(false)}>
           <IntentFormContent
             projectId={id!}
             selectedFacts={Array.from(selectedFacts)}
@@ -1707,7 +1709,7 @@ export default function CairnProjectDetail() {
       )}
 
       {showCompleteModal && (
-        <ModalBase title="Complete Project" onClose={() => setShowCompleteModal(false)}>
+        <ModalBase title={t('modals.complete.title')} onClose={() => setShowCompleteModal(false)}>
           <CompleteFormContent
             projectId={id!}
             facts={facts}
@@ -1718,7 +1720,7 @@ export default function CairnProjectDetail() {
       )}
 
       {showConcludeModal && (
-        <ModalBase title="Conclude Intent" onClose={() => setShowConcludeModal(false)}>
+        <ModalBase title={t('modals.conclude.title')} onClose={() => setShowConcludeModal(false)}>
           <ConcludeIntentFormContent
             intentDescription={selectedActionableOpenIntentRecord()?.description || ''}
             onClose={() => setShowConcludeModal(false)}
@@ -1727,11 +1729,11 @@ export default function CairnProjectDetail() {
         </ModalBase>
       )}
       {showSnapshotModal && (
-        <ModalBase title={`Snapshot — ${meta.title}`} onClose={() => setShowSnapshotModal(false)}>
+        <ModalBase title={`${t('buttons.snapshot')} — ${meta.title}`} onClose={() => setShowSnapshotModal(false)}>
           <div className="space-y-3">
             <pre className="max-h-[60vh] overflow-auto text-[11px] font-mono leading-relaxed bg-slate-50 border border-slate-200 rounded-xl p-4 text-slate-700 whitespace-pre-wrap break-words">{snapshotContent}</pre>
             <div className="flex justify-end pt-1">
-              <button onClick={() => setShowSnapshotModal(false)} className="px-4 py-2 text-sm text-slate-500 hover:bg-slate-50 rounded-xl transition">Close</button>
+              <button onClick={() => setShowSnapshotModal(false)} className="px-4 py-2 text-sm text-slate-500 hover:bg-slate-50 rounded-xl transition">{t('buttons.close')}</button>
             </div>
           </div>
         </ModalBase>
@@ -1787,6 +1789,7 @@ function SessionLogCard({ log, onToggle, expandedSessions }: {
   onToggle: (sessionId: string) => void;
   expandedSessions: Record<string, Message[] | 'loading'>;
 }) {
+  const { t } = useTranslation('cairn');
   const statusColor = log.status === 'success' ? 'text-teal-600' : 'text-rose-500';
   const isExpanded = log.session_id in expandedSessions;
   const messages = expandedSessions[log.session_id];
@@ -1817,7 +1820,7 @@ function SessionLogCard({ log, onToggle, expandedSessions }: {
               : 'border-brand-200 text-brand-600 hover:bg-brand-50'
           }`}
         >
-          {isExpanded ? 'Collapse' : 'View'}
+          {isExpanded ? t('detail.collapse') : t('detail.view')}
         </button>
       </div>
       {/* Inline expanded messages */}
@@ -1828,7 +1831,7 @@ function SessionLogCard({ log, onToggle, expandedSessions }: {
               <LoadingSpinner size="md" />
             </div>
           ) : sessionMessages.length === 0 ? (
-            <div className="text-center py-6 text-xs text-slate-400">No messages in this session</div>
+            <div className="text-center py-6 text-xs text-slate-400">{t('detail.noMessagesInSession')}</div>
           ) : (
             <div className="px-4 py-3 space-y-3 max-h-80 overflow-y-auto">
               {sessionMessages.map((msg) => (
@@ -1848,6 +1851,7 @@ function SessionLogMiniCard({ log, onToggle, expandedSessions }: {
   onToggle: (sessionId: string) => void;
   expandedSessions: Record<string, Message[] | 'loading'>;
 }) {
+  const { t } = useTranslation('cairn');
   const isExpanded = log.session_id in expandedSessions;
   const messages = expandedSessions[log.session_id];
   const isLoading = messages === 'loading';
@@ -1871,7 +1875,7 @@ function SessionLogMiniCard({ log, onToggle, expandedSessions }: {
               : 'border-brand-200 text-brand-600 hover:bg-brand-50'
           }`}
         >
-          {isExpanded ? 'Collapse' : 'View'}
+          {isExpanded ? t('detail.collapse') : t('detail.view')}
         </button>
       </div>
       {/* Inline expanded messages */}
@@ -1882,7 +1886,7 @@ function SessionLogMiniCard({ log, onToggle, expandedSessions }: {
               <LoadingSpinner size="sm" />
             </div>
           ) : sessionMessages.length === 0 ? (
-            <div className="text-center py-4 text-[11px] text-slate-400">No messages</div>
+            <div className="text-center py-4 text-[11px] text-slate-400">{t('detail.noMessages')}</div>
           ) : (
             <div className="space-y-2 max-h-60 overflow-y-auto">
               {sessionMessages.map((msg) => (
@@ -1898,6 +1902,7 @@ function SessionLogMiniCard({ log, onToggle, expandedSessions }: {
 
 /** Single message row rendered in the inline expanded view */
 function SessionMessageRow({ message }: { message: Message }) {
+  const { t } = useTranslation('cairn');
   const parts: MessagePart[] = Array.isArray((message as any).parts) ? (message as any).parts : [];
   const isUser = message.role === 'user';
 
@@ -1910,7 +1915,7 @@ function SessionMessageRow({ message }: { message: Message }) {
       </div>
       <div className="flex-1 min-w-0 space-y-1">
         <div className="text-[10px] font-semibold text-slate-400 flex items-center gap-2">
-          <span>{isUser ? 'User' : 'Assistant'}</span>
+          <span>{isUser ? t('detail.user') : t('detail.assistant')}</span>
           {(message as any).modelID && <span className="font-mono text-slate-300">{(message as any).modelID}</span>}
         </div>
         <div className="space-y-2">
@@ -1968,6 +1973,7 @@ function SessionMessageRow({ message }: { message: Message }) {
 
 /** Simplified tool call card for inline session view */
 function SessionToolPart({ part }: { part: MessagePart }) {
+  const { t } = useTranslation('cairn');
   const toolName = part.tool || 'unknown';
   const state = (part as any).state || {};
   const status = state.status || 'completed';
@@ -1991,7 +1997,7 @@ function SessionToolPart({ part }: { part: MessagePart }) {
       </summary>
       {state.input && (
         <div className="border-t border-slate-200/60 px-2.5 py-2">
-          <div className="text-[10px] font-medium text-slate-400 mb-1">Input</div>
+          <div className="text-[10px] font-medium text-slate-400 mb-1">{t('detail.input')}</div>
           <pre className="p-2 bg-slate-800 text-slate-200 rounded-md text-[10px] overflow-x-auto font-mono leading-relaxed max-h-32 overflow-y-auto">
             {JSON.stringify(state.input, null, 2)}
           </pre>
@@ -1999,7 +2005,7 @@ function SessionToolPart({ part }: { part: MessagePart }) {
       )}
       {status === 'completed' && state.output !== undefined && (
         <div className="border-t border-slate-200/60 px-2.5 py-2">
-          <div className="text-[10px] font-medium text-slate-400 mb-1">Output</div>
+          <div className="text-[10px] font-medium text-slate-400 mb-1">{t('detail.output')}</div>
           <pre className="p-2 bg-slate-800 text-green-300 rounded-md text-[10px] overflow-x-auto font-mono leading-relaxed max-h-32 overflow-y-auto">
             {typeof state.output === 'string' ? state.output : JSON.stringify(state.output, null, 2)}
           </pre>
@@ -2015,6 +2021,7 @@ function SessionToolPart({ part }: { part: MessagePart }) {
 }
 
 function HintFormContent({ projectId, onClose, onAdded }: { projectId: string; onClose: () => void; onAdded: () => void }) {
+  const { t } = useTranslation('cairn');
   const [content, setContent] = useState('');
   const [adding, setAdding] = useState(false);
   async function handleSubmit(e: React.FormEvent) {
@@ -2028,14 +2035,14 @@ function HintFormContent({ projectId, onClose, onAdded }: { projectId: string; o
   }
   return (
     <form onSubmit={handleSubmit} className="space-y-3">
-      <textarea value={content} onChange={(e) => setContent(e.target.value)} placeholder="Strategy advice or note..." rows={3}
+      <textarea value={content} onChange={(e) => setContent(e.target.value)} placeholder={t('form.hintContentPlaceholder')} rows={3}
         className="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand-100 focus:border-brand-400 transition placeholder:text-slate-300" />
       <div className="px-3 py-2 rounded-xl bg-slate-50 border border-slate-200 text-sm text-slate-500">
-        Actor: <span className="font-medium text-slate-700">user</span>
+        {t('modals.preferences.actor')}: <span className="font-medium text-slate-700">user</span>
       </div>
       <div className="flex justify-end gap-2 pt-1">
-        <button type="button" onClick={onClose} className="px-4 py-2 text-sm text-slate-500 hover:bg-slate-50 rounded-xl transition">Cancel</button>
-        <button type="submit" disabled={adding || !content.trim()} className="px-5 py-2 text-sm bg-amber-500 text-white rounded-xl font-medium hover:bg-amber-600 transition disabled:opacity-30 shadow-sm shadow-amber-200">Add</button>
+        <button type="button" onClick={onClose} className="px-4 py-2 text-sm text-slate-500 hover:bg-slate-50 rounded-xl transition">{t('buttons.cancel')}</button>
+        <button type="submit" disabled={adding || !content.trim()} className="px-5 py-2 text-sm bg-amber-500 text-white rounded-xl font-medium hover:bg-amber-600 transition disabled:opacity-30 shadow-sm shadow-amber-200">{t('buttons.add')}</button>
       </div>
     </form>
   );
@@ -2044,6 +2051,7 @@ function HintFormContent({ projectId, onClose, onAdded }: { projectId: string; o
 function IntentFormContent({ projectId, selectedFacts, onClose, onCreated }: {
   projectId: string; selectedFacts: string[]; onClose: () => void; onCreated: () => void;
 }) {
+  const { t } = useTranslation('cairn');
   const [description, setDescription] = useState('');
   const [creating, setCreating] = useState(false);
   async function handleSubmit(claim: boolean) {
@@ -2062,24 +2070,24 @@ function IntentFormContent({ projectId, selectedFacts, onClose, onCreated }: {
   return (
     <div className="space-y-3">
       <div>
-        <label className="text-[11px] text-slate-400 mb-1 block font-medium">From facts</label>
+        <label className="text-[11px] text-slate-400 mb-1 block font-medium">{t('modals.createIntent.fromFacts')}</label>
         <div className="w-full px-3 py-2 border border-slate-200 rounded-xl bg-slate-50 min-h-[42px] flex flex-wrap gap-1.5 items-center">
           {(selectedFacts.length > 0 ? selectedFacts : ['origin']).map((fid) => (
             <span key={fid} className="px-2 py-1 rounded-lg bg-white border border-slate-200 text-[11px] font-mono text-slate-600">{fid}</span>
           ))}
         </div>
       </div>
-      <textarea value={description} onChange={(e) => setDescription(e.target.value)} placeholder="What will you explore?" rows={3}
+      <textarea value={description} onChange={(e) => setDescription(e.target.value)} placeholder={t('modals.createIntent.descriptionPlaceholder')} rows={3}
         className="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand-100 focus:border-brand-400 transition placeholder:text-slate-300" />
       <div className="px-3 py-2 rounded-xl bg-slate-50 border border-slate-200 text-sm text-slate-500">
-        Actor: <span className="font-medium text-slate-700">user</span>
+        {t('modals.preferences.actor')}: <span className="font-medium text-slate-700">user</span>
       </div>
       <div className="flex justify-end gap-2 pt-1">
-        <button type="button" onClick={onClose} className="px-4 py-2 text-sm text-slate-500 hover:bg-slate-50 rounded-xl transition">Cancel</button>
+        <button type="button" onClick={onClose} className="px-4 py-2 text-sm text-slate-500 hover:bg-slate-50 rounded-xl transition">{t('buttons.cancel')}</button>
         <button onClick={() => handleSubmit(false)} disabled={creating || !description.trim()}
-          className="px-5 py-2 text-sm border border-slate-200 text-slate-600 rounded-xl font-medium hover:bg-slate-50 transition disabled:opacity-30">Declare</button>
+          className="px-5 py-2 text-sm border border-slate-200 text-slate-600 rounded-xl font-medium hover:bg-slate-50 transition disabled:opacity-30">{t('detail.actions.declare')}</button>
         <button onClick={() => handleSubmit(true)} disabled={creating || !description.trim()}
-          className="px-5 py-2 text-sm bg-brand-500 text-white rounded-xl font-medium hover:bg-brand-600 transition disabled:opacity-30 shadow-sm shadow-brand-200">Declare &amp; Claim</button>
+          className="px-5 py-2 text-sm bg-brand-500 text-white rounded-xl font-medium hover:bg-brand-600 transition disabled:opacity-30 shadow-sm shadow-brand-200">{t('detail.actions.declareClaim')}</button>
       </div>
     </div>
   );
@@ -2088,6 +2096,7 @@ function IntentFormContent({ projectId, selectedFacts, onClose, onCreated }: {
 function CompleteFormContent({ projectId, facts, onClose, onCompleted }: {
   projectId: string; facts: Fact[]; onClose: () => void; onCompleted: () => void;
 }) {
+  const { t } = useTranslation('cairn');
   const [description, setDescription] = useState('');
   const [completing, setCompleting] = useState(false);
   const fromIds = facts.filter((f) => f.id !== 'origin' && f.id !== 'goal').map((f) => f.id);
@@ -2102,22 +2111,22 @@ function CompleteFormContent({ projectId, facts, onClose, onCompleted }: {
   return (
     <div className="space-y-3">
       <div>
-        <label className="text-[11px] text-slate-400 mb-1 block font-medium">From facts</label>
+        <label className="text-[11px] text-slate-400 mb-1 block font-medium">{t('modals.createIntent.fromFacts')}</label>
         <div className="w-full px-3 py-2 border border-slate-200 rounded-xl bg-slate-50 min-h-[42px] flex flex-wrap gap-1.5 items-center">
           {fromIds.map((fid) => (
             <span key={fid} className="px-2 py-1 rounded-lg bg-white border border-slate-200 text-[11px] font-mono text-slate-600">{fid}</span>
           ))}
         </div>
       </div>
-      <textarea value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Why is the goal met?" rows={2}
+      <textarea value={description} onChange={(e) => setDescription(e.target.value)} placeholder={t('form.completePlaceholder')} rows={2}
         className="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand-100 focus:border-brand-400 transition placeholder:text-slate-300" />
       <div className="px-3 py-2 rounded-xl bg-slate-50 border border-slate-200 text-sm text-slate-500">
-        Actor: <span className="font-medium text-slate-700">user</span>
+        {t('modals.preferences.actor')}: <span className="font-medium text-slate-700">user</span>
       </div>
       <div className="flex justify-end gap-2 pt-1">
-        <button type="button" onClick={onClose} className="px-4 py-2 text-sm text-slate-500 hover:bg-slate-50 rounded-xl transition">Cancel</button>
+        <button type="button" onClick={onClose} className="px-4 py-2 text-sm text-slate-500 hover:bg-slate-50 rounded-xl transition">{t('buttons.cancel')}</button>
         <button onClick={handleSubmit} disabled={completing || !description.trim() || fromIds.length === 0}
-          className="px-5 py-2 text-sm bg-teal-500 text-white rounded-xl font-medium hover:bg-teal-600 transition disabled:opacity-30 shadow-sm shadow-teal-200">Complete</button>
+          className="px-5 py-2 text-sm bg-teal-500 text-white rounded-xl font-medium hover:bg-teal-600 transition disabled:opacity-30 shadow-sm shadow-teal-200">{t('buttons.complete')}</button>
       </div>
     </div>
   );
@@ -2126,6 +2135,7 @@ function CompleteFormContent({ projectId, facts, onClose, onCompleted }: {
 function ConcludeIntentFormContent({ intentDescription, onClose, onConclude }: {
   intentDescription: string; onClose: () => void; onConclude: (description: string) => void;
 }) {
+  const { t } = useTranslation('cairn');
   const [description, setDescription] = useState('');
   const [concluding, setConcluding] = useState(false);
   async function handleSubmit() {
@@ -2138,17 +2148,17 @@ function ConcludeIntentFormContent({ intentDescription, onClose, onConclude }: {
   return (
     <div className="space-y-3">
       <div className="px-3 py-2 rounded-xl bg-slate-50 border border-slate-200 text-sm text-slate-500">
-        Intent: <span className="font-medium text-slate-700">{intentDescription}</span>
+        {t('detail.intentLabel')}: <span className="font-medium text-slate-700">{intentDescription}</span>
       </div>
-      <textarea value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Describe the conclusion / new fact..." rows={3}
+      <textarea value={description} onChange={(e) => setDescription(e.target.value)} placeholder={t('form.concludePlaceholder')} rows={3}
         className="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand-100 focus:border-brand-400 transition placeholder:text-slate-300" />
       <div className="px-3 py-2 rounded-xl bg-slate-50 border border-slate-200 text-sm text-slate-500">
-        Actor: <span className="font-medium text-slate-700">user</span>
+        {t('modals.preferences.actor')}: <span className="font-medium text-slate-700">user</span>
       </div>
       <div className="flex justify-end gap-2 pt-1">
-        <button type="button" onClick={onClose} className="px-4 py-2 text-sm text-slate-500 hover:bg-slate-50 rounded-xl transition">Cancel</button>
+        <button type="button" onClick={onClose} className="px-4 py-2 text-sm text-slate-500 hover:bg-slate-50 rounded-xl transition">{t('buttons.cancel')}</button>
         <button onClick={handleSubmit} disabled={concluding || !description.trim()}
-          className="px-5 py-2 text-sm bg-teal-500 text-white rounded-xl font-medium hover:bg-teal-600 transition disabled:opacity-30 shadow-sm shadow-teal-200">Conclude</button>
+          className="px-5 py-2 text-sm bg-teal-500 text-white rounded-xl font-medium hover:bg-teal-600 transition disabled:opacity-30 shadow-sm shadow-teal-200">{t('buttons.conclude')}</button>
       </div>
     </div>
   );

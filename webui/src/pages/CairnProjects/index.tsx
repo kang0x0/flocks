@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import LoadingSpinner from '@/components/common/LoadingSpinner';
 import { cairnApi, type ProjectSummary } from '@/api/cairn';
 
@@ -37,6 +38,7 @@ function workingIntentBadgeText(count: number): string {
 
 export default function CairnProjectsList() {
   const navigate = useNavigate();
+  const { t } = useTranslation('cairn');
   const [projects, setProjects] = useState<ProjectSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -168,19 +170,19 @@ export default function CairnProjectsList() {
         </div>
         <div className="flex-1" />
         <div className="flex items-center gap-3 text-[11px] text-slate-400">
-          <span className="inline-flex items-center gap-1.5 shrink-0" title="All projects">
-            <span className="font-medium uppercase tracking-[0.12em] text-slate-400">All</span>
+          <span className="inline-flex items-center gap-1.5 shrink-0" title={t('stats.all')}>
+            <span className="font-medium uppercase tracking-[0.12em] text-slate-400">{t('buttons.all')}</span>
             <span className="font-semibold text-slate-600 tabular-nums">{projects.length}</span>
           </span>
-          <span className="inline-flex items-center gap-1.5 shrink-0" title="Active projects">
+          <span className="inline-flex items-center gap-1.5 shrink-0" title={t('stats.statusActive')}>
             <span className="h-1.5 w-1.5 rounded-full bg-teal-500" />
             <span className="font-semibold text-teal-700 tabular-nums">{countByStatus('active')}</span>
           </span>
-          <span className="inline-flex items-center gap-1.5 shrink-0" title="Stopped projects">
+          <span className="inline-flex items-center gap-1.5 shrink-0" title={t('stats.statusStopped')}>
             <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
             <span className="font-semibold text-amber-700 tabular-nums">{countByStatus('stopped')}</span>
           </span>
-          <span className="inline-flex items-center gap-1.5 shrink-0" title="Completed projects">
+          <span className="inline-flex items-center gap-1.5 shrink-0" title={t('stats.statusCompleted')}>
             <span className="h-1.5 w-1.5 rounded-full bg-slate-400" />
             <span className="font-semibold text-slate-600 tabular-nums">{countByStatus('completed')}</span>
           </span>
@@ -188,10 +190,10 @@ export default function CairnProjectsList() {
             <button
               onClick={handleStopAll}
               className="h-7 px-2.5 rounded-lg border border-amber-200 text-xs text-amber-700 hover:bg-amber-50 transition inline-flex items-center gap-1.5 shrink-0"
-              title="Stop all active projects"
+              title={t('confirm.stopAllTitle')}
             >
               <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="1.8" viewBox="0 0 24 24"><path d="M6 6h12v12H6z"/></svg>
-              Stop Active
+              {t('buttons.stopAll')}
             </button>
           )}
         </div>
@@ -199,7 +201,7 @@ export default function CairnProjectsList() {
           <button
             onClick={dispatcherRunning ? handleStopDispatcher : handleStartDispatcher}
             disabled={dispatcherStarting}
-            title={dispatcherRunning ? 'Stop auto-dispatcher' : 'Start auto-dispatcher'}
+            title={dispatcherRunning ? t('dispatcher.stopTooltip') : t('dispatcher.startTooltip')}
             className={`px-2.5 h-7 rounded-lg text-xs font-medium transition inline-flex items-center gap-1.5 border shrink-0 ${
               dispatcherRunning
                 ? 'bg-emerald-50 border-emerald-200 text-emerald-600 hover:bg-emerald-100'
@@ -207,14 +209,14 @@ export default function CairnProjectsList() {
             }`}
           >
             <span className={`w-1.5 h-1.5 rounded-full ${dispatcherRunning ? 'bg-emerald-500 animate-pulse' : 'bg-slate-300'}`}></span>
-            {dispatcherRunning ? 'Auto: On' : 'Auto: Off'}
+            {dispatcherRunning ? t('dispatcher.autoOn') : t('dispatcher.autoOff')}
           </button>
           <button
             onClick={() => setShowNewProject(true)}
             className="h-7 px-2.5 rounded-lg border border-brand-200 text-xs text-brand-600 hover:bg-brand-50 transition inline-flex items-center gap-1.5"
           >
             <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="1.9" viewBox="0 0 24 24"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
-            New Project
+            {t('create.open')}
           </button>
         </div>
       </header>
@@ -230,14 +232,14 @@ export default function CairnProjectsList() {
         {projects.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-full text-slate-400">
             <svg className="w-20 h-20 mb-5 opacity-30" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H19a1 1 0 0 1 1 1v18a1 1 0 0 1-1 1H6.5a2.5 2.5 0 0 1 0-5H20"/><path d="M8 7h8"/><path d="M8 11h8"/><path d="M8 15h5"/></svg>
-            <p className="text-lg font-medium text-slate-500">No projects yet</p>
-            <p className="text-sm mt-1">Create a project to start exploring</p>
+            <p className="text-lg font-medium text-slate-500">{t('empty.title')}</p>
+            <p className="text-sm mt-1">{t('empty.action')}</p>
             <button
               onClick={() => setShowNewProject(true)}
               className="mt-4 h-8 px-4 rounded-lg border border-slate-300 text-xs font-medium text-slate-600 hover:bg-slate-100 transition inline-flex items-center gap-1.5"
             >
               <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="1.9" viewBox="0 0 24 24"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
-              New Project
+              {t('create.open')}
             </button>
           </div>
         ) : (
@@ -262,7 +264,7 @@ export default function CairnProjectsList() {
                     <button
                       onClick={(e) => { e.stopPropagation(); setShowRename({ id: p.id, title: p.title }); }}
                       className="title-action-button mt-0.5 inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-slate-200 text-slate-400 hover:border-slate-300 hover:bg-slate-50 hover:text-slate-600"
-                      title="Rename project"
+                      title={t('buttons.rename')}
                     >
                       <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="1.8" viewBox="0 0 24 24"><path d="m16.862 4.487 1.65-1.65a1.875 1.875 0 1 1 2.652 2.652l-9.193 9.193a4.5 4.5 0 0 1-1.897 1.13L6 17l1.188-4.074a4.5 4.5 0 0 1 1.13-1.897l8.544-8.542Z"/><path d="M19.5 7.125 16.875 4.5"/><path d="M5.25 18.75h13.5"/></svg>
                     </button>
@@ -325,7 +327,7 @@ export default function CairnProjectsList() {
                       className="px-2 py-1 rounded-lg border border-slate-200 text-[11px] text-slate-500 hover:bg-slate-50 hover:text-slate-700 transition flex items-center gap-1"
                     >
                       <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="1.7" viewBox="0 0 24 24"><path d="M14.25 3H7.5A2.25 2.25 0 0 0 5.25 5.25v13.5A2.25 2.25 0 0 0 7.5 21h9a2.25 2.25 0 0 0 2.25-2.25V8.25L14.25 3Z"/><path d="M14.25 3v5.25h4.5"/><path d="M8.25 12h7.5M8.25 15h5.25"/></svg>
-                      Snapshot
+                      {t('buttons.snapshot')}
                     </button>
                     {p.status !== 'completed' && (
                       <button
@@ -337,9 +339,9 @@ export default function CairnProjectsList() {
                         }`}
                       >
                         {p.status === 'active' ? (
-                          <><svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="1.8" viewBox="0 0 24 24"><path d="M6 6h12v12H6z"/></svg>Stop</>
+                          <><svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="1.8" viewBox="0 0 24 24"><path d="M6 6h12v12H6z"/></svg>{t('buttons.stop')}</>
                         ) : (
-                          <><svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="1.8" viewBox="0 0 24 24"><path d="m8 5 11 7-11 7V5Z"/></svg>Resume</>
+                          <><svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="1.8" viewBox="0 0 24 24"><path d="m8 5 11 7-11 7V5Z"/></svg>{t('buttons.resume')}</>
                         )}
                       </button>
                     )}
@@ -349,7 +351,7 @@ export default function CairnProjectsList() {
                         className="px-2 py-1 rounded-lg border border-sky-200 text-[11px] text-sky-600 hover:bg-sky-50 transition flex items-center gap-1"
                       >
                         <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="1.7" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 3-6.708"/><path d="M3 3v6h6"/></svg>
-                        Reopen
+                        {t('buttons.reopen')}
                       </button>
                     )}
                     <button
@@ -357,7 +359,7 @@ export default function CairnProjectsList() {
                       className="px-2 py-1 rounded-lg border border-rose-200 text-[11px] text-rose-500 hover:bg-rose-50 hover:text-rose-600 transition flex items-center gap-1"
                     >
                       <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="1.7" viewBox="0 0 24 24"><path d="M3 6h18"/><path d="M8 6V4.75A1.75 1.75 0 0 1 9.75 3h4.5A1.75 1.75 0 0 1 16 4.75V6"/><path d="M19 6l-.63 11.338A2 2 0 0 1 16.37 19.5H7.63a2 2 0 0 1-1.997-2.162L5 6"/><path d="M10 10.5v5"/><path d="M14 10.5v5"/></svg>
-                      Delete
+                      {t('buttons.delete')}
                     </button>
                   </div>
                 </div>
@@ -393,6 +395,7 @@ function NewProjectModal({
   onClose: () => void;
   onCreated: (id: string) => void;
 }) {
+  const { t } = useTranslation('cairn');
   const [title, setTitle] = useState('');
   const [origin, setOrigin] = useState('');
   const [goal, setGoal] = useState('');
@@ -403,7 +406,7 @@ function NewProjectModal({
   async function handleSubmit(e: React.SyntheticEvent) {
     e.preventDefault();
     if (!title.trim() || !origin.trim() || !goal.trim()) {
-      setError('Title, origin, and goal are required');
+      setError(t('errors.missingFields'));
       return;
     }
     setCreating(true);
@@ -413,7 +416,7 @@ function NewProjectModal({
       const project = await cairnApi.createProject({ title: title.trim(), origin: origin.trim(), goal: goal.trim(), hints: hintList.length > 0 ? hintList : undefined });
       onCreated(project.project.id);
     } catch (err: any) {
-      setError(err?.response?.data?.detail || err.message || 'Failed to create');
+      setError(err?.response?.data?.detail || err.message || t('errors.createFailed'));
     } finally {
       setCreating(false);
     }
@@ -422,50 +425,50 @@ function NewProjectModal({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center overlay" onClick={onClose}>
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg p-6 border border-slate-200/60 mx-4" onClick={(e) => e.stopPropagation()}>
-        <h3 className="text-base font-semibold text-slate-700 mb-4">New Project</h3>
+        <h3 className="text-base font-semibold text-slate-700 mb-4">{t('create.title')}</h3>
         <form onSubmit={handleSubmit} className="space-y-3">
           <input
             type="text"
             value={title}
             onChange={(e) => setTitle(e.target.value)}
             className="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand-100 focus:border-brand-400 transition placeholder:text-slate-300"
-            placeholder="Project title"
+            placeholder={t('form.renamePlaceholder')}
           />
           <textarea
             value={origin}
             onChange={(e) => setOrigin(e.target.value)}
             className="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand-100 focus:border-brand-400 transition placeholder:text-slate-300"
-            placeholder="Origin — starting point"
+            placeholder={t('form.originLabel')}
             rows={2}
           />
           <textarea
             value={goal}
             onChange={(e) => setGoal(e.target.value)}
             className="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand-100 focus:border-brand-400 transition placeholder:text-slate-300"
-            placeholder="Goal — what to achieve"
+            placeholder={t('form.goalLabel')}
             rows={2}
           />
           <div>
             <div className="flex items-center justify-between mb-2">
-              <span className="text-[11px] text-slate-400 font-medium uppercase tracking-wider">Hints (optional)</span>
-              <button type="button" onClick={() => setHints([...hints, ''])} className="text-[11px] text-brand-500 hover:text-brand-600 font-medium">+ Add</button>
+              <span className="text-[11px] text-slate-400 font-medium uppercase tracking-wider">{t('form.hintsLabel')}</span>
+              <button type="button" onClick={() => setHints([...hints, ''])} className="text-[11px] text-brand-500 hover:text-brand-600 font-medium">+ {t('buttons.add')}</button>
             </div>
             {hints.map((h, idx) => (
               <div key={idx} className="flex gap-2 mb-2">
-                <input value={h} onChange={(e) => { const n = [...hints]; n[idx] = e.target.value; setHints(n); }} placeholder="Hint content"
+                <input value={h} onChange={(e) => { const n = [...hints]; n[idx] = e.target.value; setHints(n); }} placeholder={t('form.hintContentPlaceholder')}
                   className="flex-1 px-3 py-1.5 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-100 focus:border-brand-400 transition placeholder:text-slate-300" />
                 {hints.length > 1 && (
                   <button type="button" onClick={() => setHints(hints.filter((_, i) => i !== idx))} className="px-2 text-slate-300 hover:text-red-400 transition text-sm">&times;</button>
                 )}
               </div>
             ))}
-            <p className="text-[11px] text-slate-400">Hint creator uses local actor: <span className="font-medium text-slate-600">user</span></p>
+            <p className="text-[11px] text-slate-400">{t('modals.createIntent.actor')}: <span className="font-medium text-slate-600">user</span></p>
           </div>
           {error && <p className="text-xs text-rose-600">{error}</p>}
           <div className="flex justify-end gap-2 mt-2">
-            <button type="button" onClick={onClose} className="px-4 py-2 text-sm text-slate-500 hover:bg-slate-50 rounded-xl transition">Cancel</button>
+            <button type="button" onClick={onClose} className="px-4 py-2 text-sm text-slate-500 hover:bg-slate-50 rounded-xl transition">{t('buttons.cancel')}</button>
             <button type="submit" disabled={creating || !title.trim() || !origin.trim() || !goal.trim()} className="px-5 py-2 text-sm bg-brand-500 text-white rounded-xl font-medium hover:bg-brand-600 transition disabled:opacity-30 shadow-sm shadow-brand-200">
-              {creating ? 'Creating...' : 'Create'}
+              {creating ? t('form.creating') : t('buttons.create')}
             </button>
           </div>
         </form>
@@ -485,12 +488,13 @@ function RenameModal({
   onClose: () => void;
   onRenamed: (title: string) => void;
 }) {
+  const { t } = useTranslation('cairn');
   const [title, setTitle] = useState(currentTitle);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center overlay" onClick={onClose}>
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg p-6 border border-slate-200/60 mx-4" onClick={(e) => e.stopPropagation()}>
-        <h3 className="text-base font-semibold text-slate-700 mb-1">Rename Project</h3>
+        <h3 className="text-base font-semibold text-slate-700 mb-1">{t('modals.rename.title')}</h3>
         <p className="text-xs text-slate-400 mb-4"><span className="font-mono text-slate-500">{projectId}</span> — {currentTitle}</p>
         <div className="space-y-3">
           <input
@@ -498,15 +502,15 @@ function RenameModal({
             onChange={(e) => setTitle(e.target.value)}
             onKeyDown={(e) => { if (e.key === 'Enter' && title.trim()) onRenamed(title.trim()); }}
             className="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand-100 focus:border-brand-400 transition placeholder:text-slate-300"
-            placeholder="Project title"
+            placeholder={t('form.renamePlaceholder')}
             autoFocus
           />
-          <p className="text-[11px] text-slate-400">This only changes the project title and is allowed in any project status.</p>
+          <p className="text-[11px] text-slate-400">{t('modals.rename.help')}</p>
         </div>
         <div className="flex justify-end gap-2 mt-5">
-          <button onClick={onClose} className="px-4 py-2 text-sm text-slate-500 hover:bg-slate-50 rounded-xl transition">Cancel</button>
+          <button onClick={onClose} className="px-4 py-2 text-sm text-slate-500 hover:bg-slate-50 rounded-xl transition">{t('buttons.cancel')}</button>
           <button onClick={() => { if (title.trim()) onRenamed(title.trim()); }} disabled={!title.trim()}
-            className="px-5 py-2 text-sm bg-slate-800 text-white rounded-xl font-medium hover:bg-slate-900 transition disabled:opacity-30 shadow-sm">Save</button>
+            className="px-5 py-2 text-sm bg-slate-800 text-white rounded-xl font-medium hover:bg-slate-900 transition disabled:opacity-30 shadow-sm">{t('buttons.save')}</button>
         </div>
       </div>
     </div>
