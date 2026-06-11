@@ -8,6 +8,7 @@
   "agentHub": "Agent Studio",
   "agents": "Agents",
   "workflows": "Workflows",
+  "dagExplorer": "DAG Explorer",
   "hub": "Flocks Hub",
   "skills": "Skills",
   "tools": "Tools",

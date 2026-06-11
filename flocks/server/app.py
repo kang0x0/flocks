@@ -457,6 +457,49 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         log.warning("updater.recovery.failed", {"error": str(e)})
 
+    # Initialize DAG Orchestrator（阻塞式：路由必须先注册，调度循环后台运行）
+    try:
+        from flocks.dag.db import get_db
+        from flocks.dag.store import GraphStore
+        from flocks.dag.orchestrator.loop import DagOrchestrator
+        from flocks.bus import Bus
+
+        async def _init_dag_phase() -> None:
+            store = GraphStore()
+            await get_db()  # Ensure DB is ready
+            orchestrator = DagOrchestrator(
+                graph_store=store,
+                session_manager=None,  # Will be set after further integration
+                config={
+                    "schedule": {"interval": 5, "heartbeat_interval": 10},
+                    "concurrency": {"max_project": 4, "max_explore": 3},
+                    "tasks": {
+                        "reason": {
+                            "provider": "openai", "model": "gpt-4o",
+                            "temperature": 0.2, "timeout": 300,
+                            "tools": ["read", "glob", "grep"],
+                        },
+                        "explore": {
+                            "provider": "anthropic", "model": "claude-sonnet-4-20250514",
+                            "temperature": 0.4, "timeout": 600, "conclude_timeout": 120,
+                            "tools": ["read", "write", "edit", "bash", "glob", "grep"],
+                        },
+                    },
+                },
+                bus=Bus,
+            )
+            # Register DAG routes（必须在 yield 前完成）
+            from flocks.server.routes.dag import init_dag_routes
+            dag_router = init_dag_routes(store, orchestrator, bus=Bus)
+            app.include_router(dag_router, prefix="/api")
+            # Start orchestrator loop in background
+            asyncio.create_task(orchestrator.start())
+            log.info("dag.orchestrator.started")
+
+        await _run_startup_phase(log, "dag.init", _init_dag_phase)
+    except Exception as e:
+        log.warning("dag.init_failed", {"error": str(e)})
+
     blocking_startup_ms = int((time.perf_counter() - startup_started_at) * 1000)
     log.info("server.startup.ready", {
         "blocking_duration_ms": blocking_startup_ms,

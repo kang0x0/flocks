@@ -8,4 +8,5 @@ export * from './monitoring';
 export * from './tool';
 export * from './provider';
 export * from './mcp';
+export * from './dag';
 export * from './hub';

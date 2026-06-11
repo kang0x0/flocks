@@ -37,6 +37,7 @@ const SystemLogPage = lazy(() => import('@/pages/SystemLog'));
 const FlocksproUpgradePage = lazy(() => import('@/pages/FlocksproUpgrade'));
 const FlocksproUpgradeCallbackPage = lazy(() => import('@/pages/FlocksproUpgrade/Callback'));
 const UserDefinedPageHost = lazy(() => import('@/pages/UserDefinedPageHost'));
+const DagPage = lazy(() => import('@/pages/Dag'));
 
 function LazyRoute({ children }: { children: React.ReactNode }) {
   return (
@@ -127,6 +128,7 @@ export function Routes() {
         <Route path="workflows/new" element={<LazyRoute><WorkflowCreate /></LazyRoute>} />
         <Route path="workflows/:id" element={<LazyRoute><WorkflowDetail /></LazyRoute>} />
         <Route path="workflows/:id/edit" element={<LazyRoute><WorkflowEditor /></LazyRoute>} />
+        <Route path="dag" element={<LazyRoute><DagPage /></LazyRoute>} />
         <Route path="tasks" element={<LazyRoute><TaskPage /></LazyRoute>} />
         <Route path="workspace" element={<LazyRoute><WorkspacePage /></LazyRoute>} />
 
