@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
@@ -18,6 +19,15 @@ class TestParseSlashCommand:
         assert parsed is not None
         assert parsed.command_name == "reset"
         assert parsed.canonical_name == "new"
+
+    def test_reads_structured_arguments_from_metadata(self):
+        parsed = parse_slash_command(
+            '/bug {"scope":"acp"}',
+            {"commandArgumentsJson": {"scope": "acp"}},
+        )
+        assert parsed is not None
+        assert parsed.args == '{"scope":"acp"}'
+        assert parsed.args_json == {"scope": "acp"}
 
     def test_removed_restart_command_no_longer_resolves(self):
         parsed = parse_slash_command("/restart")
@@ -111,14 +121,14 @@ class TestDispatchUserInput:
         event = UserInputEvent(
             source_type="webui",
             sessionID="ses_test",
-            text="/plan investigate routing",
-            parts=[{"type": "text", "text": "/plan investigate routing"}],
+            text="/bug investigate routing",
+            parts=[{"type": "text", "text": "/bug investigate routing"}],
         )
 
         result = await dispatch_user_input(event, sink)
 
         assert result.action == "llm"
-        assert llm == [("/plan investigate routing", "/plan investigate routing")]
+        assert llm == [("/bug investigate routing", "/bug investigate routing")]
         assert not direct
 
     @pytest.mark.asyncio
@@ -242,7 +252,7 @@ class TestSessionRoutesUseDispatcher:
             ),
         )
         request = session_routes.PromptRequest(
-            parts=[{"type": "text", "text": "/plan investigate"}],
+            parts=[{"type": "text", "text": "/bug investigate"}],
         )
 
         resp = await session_routes.send_session_message_async(session_id, request)
@@ -250,7 +260,7 @@ class TestSessionRoutesUseDispatcher:
         await asyncio.sleep(0)
         dispatch_mock.assert_awaited_once()
         event = dispatch_mock.await_args.args[2]
-        assert event.text == "/plan investigate"
+        assert event.text == "/bug investigate"
 
     @pytest.mark.asyncio
     async def test_command_route_routes_through_dispatcher(self, monkeypatch):
@@ -273,18 +283,42 @@ class TestSessionRoutesUseDispatcher:
                 )
             ),
         )
-        request = session_routes.CommandRequest(command="plan", arguments="investigate")
+        request = session_routes.CommandRequest(command="bug", arguments="investigate")
 
         resp = await session_routes.send_session_command(session_id, request)
         assert resp["status"] == "accepted"
         await asyncio.sleep(0)
         dispatch_mock.assert_awaited_once()
         event = dispatch_mock.await_args.args[2]
-        assert event.text == "/plan investigate"
-        assert event.display_text == "/plan investigate"
+        assert event.text == "/bug investigate"
+        assert event.display_text == "/bug investigate"
 
 
 class TestPromptQueueRoutes:
+    def test_materialize_queued_data_url_returns_readable_file_uri(self, monkeypatch, tmp_path):
+        from flocks.server.routes import session as session_routes
+        from flocks.session.utils.file_extractor import read_file_part_bytes
+
+        class FakeWorkspace:
+            def resolve_workspace_path(self, rel_path: str):
+                return tmp_path / rel_path
+
+        monkeypatch.setattr(
+            "flocks.workspace.manager.WorkspaceManager.get_instance",
+            lambda: FakeWorkspace(),
+        )
+        data_url = "data:image/png;base64," + base64.b64encode(b"png-bytes").decode()
+
+        url = session_routes._materialize_data_url_part(
+            "ses_windows_uri",
+            data_url,
+            "image/png",
+            "screenshot.png",
+        )
+
+        assert url.startswith("file://")
+        assert read_file_part_bytes(url) == b"png-bytes"
+
     @pytest.mark.asyncio
     async def test_prompt_async_queues_when_session_running_without_creating_message(self, monkeypatch):
         from flocks.server.routes import session as session_routes

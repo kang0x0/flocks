@@ -38,6 +38,7 @@ const FlocksproUpgradePage = lazy(() => import('@/pages/FlocksproUpgrade'));
 const FlocksproUpgradeCallbackPage = lazy(() => import('@/pages/FlocksproUpgrade/Callback'));
 const CairnProjectsPage = lazy(() => import('@/pages/CairnProjects'));
 const CairnProjectDetailPage = lazy(() => import('../pages/CairnProjects/Detail'));
+const UserDefinedPageHost = lazy(() => import('@/pages/UserDefinedPageHost'));
 
 function LazyRoute({ children }: { children: React.ReactNode }) {
   return (
@@ -119,6 +120,7 @@ export function Routes() {
       <Route path="/setup-admin" element={<Navigate to="/" replace />} />
       <Route path="/" element={<Layout />}>
         <Route index element={<Home />} />
+        <Route path="user-defined-pages/:pageId/*" element={<LazyRoute><UserDefinedPageHost /></LazyRoute>} />
 
         {/* AI 工作台 */}
         <Route path="sessions" element={<LazyRoute><SessionPage /></LazyRoute>} />

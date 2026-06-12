@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, screen, waitFor } from '@testing-library/react';
+import { act, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -7,17 +7,24 @@ import type { Message } from '@/types';
 
 import {
   areChatMessagePartsRenderEqual,
-  buildTodoWriteSummary,
+  buildTodoSummary,
+  ChatToolPart,
   dedupeUploadedDocumentAttachments,
   default as SessionChat,
   getEditingActionBarClassName,
   getMessageBubbleClassName,
+  getMessageErrorText,
   getMessageGroupClassName,
+  getRenderableThinkingText,
+  getRenderableFileUrl,
   getRegenerateTruncateTarget,
   getStandaloneThinkingBubbleClassName,
   getUserAvatarContainerClassName,
   getUserAvatarSpacerClassName,
+  hasActiveToolPart,
+  isActiveSessionStatus,
   listUploadedDocumentPaths,
+  shouldRenderMessage,
   shouldRefetchFinishedMessage,
   truncateToolDisplayText,
 } from './SessionChat';
@@ -33,6 +40,7 @@ const sessionApiUpdateMessagePartMock = vi.fn();
 const sessionApiResendMessageMock = vi.fn();
 const sessionApiRegenerateMessageMock = vi.fn();
 const useSessionMessagesMock = vi.fn();
+const useSSEOptionsRef = vi.hoisted(() => ({ current: null as any }));
 const tMock = (key: string) => ({
   'chat.placeholder': '请输入消息',
   'chat.emptyText': '暂无消息',
@@ -43,6 +51,21 @@ const tMock = (key: string) => ({
   'chat.mention.title': '选择 Agent',
   'chat.mention.navigate': '导航',
   'chat.mention.select': '选择',
+  'chat.tool.pending': '等待中',
+  'chat.tool.running': '执行中',
+  'chat.tool.completed': '已完成',
+  'chat.tool.error': '失败',
+  'chat.tool.inputParams': '输入参数',
+  'chat.tool.outputResult': '输出结果',
+  'chat.tool.todoStages': 'Todo 阶段',
+  'chat.tool.todoStatus.pending': '待办',
+  'chat.tool.todoStatus.inProgress': '进行中',
+  'chat.tool.todoStatus.completed': '完成',
+  'chat.tool.todoStatus.cancelled': '已取消',
+  'chat.tool.todoSummary.progress': '进度',
+  'chat.tool.todoSummary.inProgress': '进行中',
+  'chat.tool.todoSummary.completed': '完成',
+  'chat.tool.todoSummary.done': '完成',
   'smartAssistant': '智能助手',
 }[key] ?? key);
 const pendingQuestionsHookMock = {
@@ -72,7 +95,10 @@ vi.mock('@/hooks/useSessions', () => ({
 }));
 
 vi.mock('@/hooks/useSSE', () => ({
-  useSSE: () => ({ status: 'connected' }),
+  useSSE: (options: any) => {
+    useSSEOptionsRef.current = options;
+    return { status: 'connected' };
+  },
 }));
 
 vi.mock('@/hooks/useReasoningToggle', () => ({
@@ -115,7 +141,18 @@ vi.mock('@/api/session', () => ({
 
 beforeEach(() => {
   vi.clearAllMocks();
-  localStorage.clear();
+  if (typeof window.localStorage?.clear !== 'function') {
+    Object.defineProperty(window, 'localStorage', {
+      configurable: true,
+      value: {
+        clear: vi.fn(),
+        getItem: vi.fn(),
+        setItem: vi.fn(),
+        removeItem: vi.fn(),
+      },
+    });
+  }
+  window.localStorage.clear();
   Object.defineProperty(window.HTMLElement.prototype, 'scrollIntoView', {
     configurable: true,
     value: vi.fn(),
@@ -131,6 +168,7 @@ beforeEach(() => {
   sessionApiResendMessageMock.mockResolvedValue({});
   sessionApiRegenerateMessageMock.mockResolvedValue({});
   pendingQuestionsHookMock.fetchPendingQuestions.mockResolvedValue(undefined);
+  useSSEOptionsRef.current = null;
   useSessionMessagesMock.mockReturnValue({
     messages: [],
     loading: false,
@@ -277,6 +315,31 @@ describe('getStandaloneThinkingBubbleClassName', () => {
   });
 });
 
+describe('getRenderableFileUrl', () => {
+  it('converts local file URLs to the guarded file download endpoint', () => {
+    expect(getRenderableFileUrl('file:///tmp/channel%20image.png')).toBe(
+      '/api/file/download?path=%2Ftmp%2Fchannel%20image.png',
+    );
+  });
+
+  it('converts Windows file URLs without adding a POSIX root prefix', () => {
+    expect(getRenderableFileUrl('file:///C:/Users/demo/Pictures/channel%20image.png')).toBe(
+      '/api/file/download?path=C%3A%2FUsers%2Fdemo%2FPictures%2Fchannel%20image.png',
+    );
+  });
+
+  it('preserves UNC file URL hosts for Windows network paths', () => {
+    expect(getRenderableFileUrl('file://server/share/channel%20image.png')).toBe(
+      '/api/file/download?path=%2F%2Fserver%2Fshare%2Fchannel%20image.png',
+    );
+  });
+
+  it('leaves browser-readable URLs unchanged', () => {
+    expect(getRenderableFileUrl('https://example.com/image.png')).toBe('https://example.com/image.png');
+    expect(getRenderableFileUrl('data:image/png;base64,abc')).toBe('data:image/png;base64,abc');
+  });
+});
+
 describe('getUserAvatarContainerClassName', () => {
   it('moves the user avatar to the bubble side without affecting bubble spacing', () => {
     const className = getUserAvatarContainerClassName(false);
@@ -338,6 +401,127 @@ describe('SessionChat standalone thinking indicator', () => {
       expect(container.querySelectorAll('.animate-bounce').length).toBeGreaterThanOrEqual(3);
       expect(container.textContent).not.toContain('思考中...');
     });
+  });
+});
+
+describe('shouldRenderMessage', () => {
+  it('keeps active empty assistant messages eligible for the thinking indicator', () => {
+    expect(shouldRenderMessage(makeMessage({
+      id: 'assistant-active',
+      role: 'assistant',
+      parts: [],
+      finish: null,
+    }))).toBe(true);
+  });
+
+  it('hides stopped empty assistant messages after abort before first content', () => {
+    expect(shouldRenderMessage(makeMessage({
+      id: 'assistant-stopped',
+      role: 'assistant',
+      parts: [],
+      finish: 'stop',
+    }))).toBe(false);
+  });
+
+  it('keeps empty assistant error messages visible', () => {
+    expect(shouldRenderMessage(makeMessage({
+      id: 'assistant-error',
+      role: 'assistant',
+      parts: [],
+      finish: 'error',
+      error: { code: 'SessionError', message: 'Provider failed' },
+    }))).toBe(true);
+  });
+
+  it('hides stopped assistant messages that only contain punctuation reasoning', () => {
+    expect(shouldRenderMessage(makeMessage({
+      id: 'assistant-dot',
+      role: 'assistant',
+      finish: 'stop',
+      parts: [
+        {
+          id: 'part-dot',
+          messageID: 'assistant-dot',
+          sessionID: 'sess-1',
+          type: 'reasoning',
+          text: '.',
+        } as any,
+      ],
+    }))).toBe(false);
+  });
+});
+
+describe('getRenderableThinkingText', () => {
+  it('filters punctuation-only reasoning previews', () => {
+    expect(getRenderableThinkingText({ type: 'reasoning', text: '.' } as any)).toBe('');
+    expect(getRenderableThinkingText({ type: 'reasoning', text: '。' } as any)).toBe('');
+  });
+
+  it('keeps meaningful reasoning text', () => {
+    expect(getRenderableThinkingText({ type: 'reasoning', text: '需要更新 todo 状态' } as any)).toBe('需要更新 todo 状态');
+  });
+});
+
+describe('getMessageErrorText', () => {
+  it('prefers user-facing display messages over raw provider errors', () => {
+    expect(getMessageErrorText(makeMessage({
+      id: 'assistant-error',
+      error: {
+        message: 'Connection error.',
+        data: {
+          displayMessage: 'Model is unavailable. Please check the provider connection and model configuration.',
+          message: 'Connection error.',
+        },
+      } as any,
+    }))).toBe('Model is unavailable. Please check the provider connection and model configuration.');
+  });
+
+  it('extracts nested provider error messages', () => {
+    expect(getMessageErrorText(makeMessage({
+      id: 'assistant-error',
+      error: {
+        name: 'APIConnectionError',
+        data: { message: 'Connection error.' },
+      } as any,
+    }))).toBe('Connection error.');
+  });
+
+  it('falls back to the error code', () => {
+    expect(getMessageErrorText(makeMessage({
+      id: 'assistant-error',
+      error: { code: 'SessionError' } as any,
+    }))).toBe('SessionError');
+  });
+});
+
+describe('SessionChat error rendering', () => {
+  it('renders empty assistant error messages instead of the thinking indicator', () => {
+    useSessionMessagesMock.mockReturnValue({
+      messages: [
+        makeMessage({
+          id: 'assistant-error',
+          role: 'assistant',
+          parts: [],
+          finish: 'error',
+          error: {
+            name: 'APIConnectionError',
+            data: { message: 'Connection error.' },
+          } as any,
+        }),
+      ],
+      loading: false,
+      refetch: vi.fn(),
+      addMessage: vi.fn(),
+      updateMessage: vi.fn(),
+      updateMessagePart: vi.fn(),
+      replaceMessageText: vi.fn(),
+      truncateAfterMessage: vi.fn(),
+    });
+
+    const { container } = render(React.createElement(SessionChat, { sessionId: 'sess-1' }));
+
+    expect(screen.getByText('Connection error.')).toBeInTheDocument();
+    expect(container.querySelectorAll('.animate-bounce')).toHaveLength(0);
   });
 });
 
@@ -475,12 +659,13 @@ describe('truncateToolDisplayText', () => {
   });
 });
 
-describe('buildTodoWriteSummary', () => {
-  it('renders progress from structured todowrite input', () => {
-    expect(buildTodoWriteSummary({
+describe('buildTodoSummary', () => {
+  it('renders progress from structured todo input', () => {
+    expect(buildTodoSummary({
       input: {
+        action: 'write',
         todos: [
-          { id: '1', content: '定位 todowrite 摘要问题', status: 'in_progress' },
+          { id: '1', content: '定位 todo 摘要问题', status: 'in_progress' },
           { id: '2', content: '补充回归测试', status: 'completed' },
           { id: '3', content: '验证 Web UI 展示', status: 'pending' },
         ],
@@ -489,18 +674,72 @@ describe('buildTodoWriteSummary', () => {
   });
 
   it('prefers current metadata todos when available', () => {
-    expect(buildTodoWriteSummary({
+    expect(buildTodoSummary({
       metadata: {
         oldTodos: [
-          { id: '1', content: '定位 todowrite 摘要问题', status: 'pending' },
+          { id: '1', content: '定位 todo 摘要问题', status: 'pending' },
           { id: '2', content: '补充回归测试', status: 'pending' },
         ],
         newTodos: [
-          { id: '1', content: '定位 todowrite 摘要问题', status: 'completed' },
+          { id: '1', content: '定位 todo 摘要问题', status: 'completed' },
           { id: '3', content: '验证 Web UI 展示', status: 'completed' },
         ],
       },
     })).toBe('Completed 2/2');
+  });
+
+  it('renders a readable fallback for todo actions without structured entries', () => {
+    expect(buildTodoSummary({
+      input: {
+        action: 'write',
+        todos: [],
+      },
+    })).toBe('Update todos');
+  });
+});
+
+describe('ChatToolPart todo rendering', () => {
+  it('renders todo progress and stages without object-object summaries', () => {
+    const { container } = render(
+      React.createElement(ChatToolPart, {
+        part: {
+          id: 'todo-part',
+          type: 'tool',
+          tool: 'todo',
+          callID: 'call-todo',
+          state: {
+            status: 'completed',
+            input: {
+              action: 'write',
+              todos: [
+                { id: '1', content: '定位 todo 摘要问题', activeForm: '定位 todo 摘要问题中', status: 'in_progress' },
+                { id: '2', content: '补充回归测试', status: 'completed' },
+                { id: '3', content: '验证 Web UI 展示', status: 'pending' },
+              ],
+            },
+            output: '{}',
+            title: '2 todos',
+            metadata: {
+              action: 'write',
+              newTodos: [
+                { id: '1', content: '定位 todo 摘要问题', activeForm: '定位 todo 摘要问题中', status: 'in_progress' },
+                { id: '2', content: '补充回归测试', status: 'completed' },
+                { id: '3', content: '验证 Web UI 展示', status: 'pending' },
+              ],
+            },
+          },
+        } as any,
+      }),
+    );
+
+    expect(container.textContent).toContain('进度 1/3 · 进行中 1');
+    expect(container.textContent).toContain('Todo 阶段');
+    expect(container.textContent).toContain('定位 todo 摘要问题中');
+    expect(container.textContent).toContain('完成');
+    expect(container.textContent).not.toContain('completed');
+    expect(container.textContent).not.toContain('输入参数');
+    expect(container.textContent).not.toContain('输出结果');
+    expect(container.textContent).not.toContain('[object Object]');
   });
 });
 
@@ -540,12 +779,183 @@ describe('shouldRefetchFinishedMessage', () => {
   });
 });
 
+describe('streaming activity helpers', () => {
+  it('detects pending and running tool parts as active', () => {
+    expect(hasActiveToolPart([
+      { id: 'tool-1', type: 'tool', state: { status: 'pending' } } as Message['parts'][number],
+    ])).toBe(true);
+    expect(hasActiveToolPart([
+      { id: 'tool-1', type: 'tool', state: { status: 'running' } } as Message['parts'][number],
+    ])).toBe(true);
+  });
+
+  it('does not treat completed or error tool parts as active', () => {
+    expect(hasActiveToolPart([
+      { id: 'tool-1', type: 'tool', state: { status: 'completed' } } as Message['parts'][number],
+      { id: 'tool-2', type: 'tool', state: { status: 'error' } } as Message['parts'][number],
+    ])).toBe(false);
+  });
+
+  it('keeps busy, compacting, and retry session statuses active', () => {
+    expect(isActiveSessionStatus({ type: 'busy' })).toBe(true);
+    expect(isActiveSessionStatus({ type: 'compacting' })).toBe(true);
+    expect(isActiveSessionStatus({ type: 'retry' })).toBe(true);
+    expect(isActiveSessionStatus({ type: 'idle' })).toBe(false);
+    expect(isActiveSessionStatus(undefined)).toBe(false);
+  });
+});
+
+describe('SessionChat fallback polling', () => {
+  it('does not finish streaming while fetched messages still contain a running tool', async () => {
+    vi.useFakeTimers();
+    const refetch = vi.fn();
+    const onStreamingDone = vi.fn();
+    try {
+      useSessionMessagesMock.mockReturnValue({
+        messages: [
+          makeMessage({
+            id: 'assistant-1',
+            finish: 'tool-calls',
+            parts: [
+              { id: 'tool-1', type: 'tool', state: { status: 'running' } } as Message['parts'][number],
+            ],
+          }),
+        ],
+        loading: false,
+        refetch,
+        addMessage: vi.fn(),
+        updateMessage: vi.fn(),
+        updateMessagePart: vi.fn(),
+        replaceMessageText: vi.fn(),
+        truncateAfterMessage: vi.fn(),
+      });
+      clientGetMock.mockResolvedValueOnce({
+        data: [
+          {
+            info: {
+              id: 'assistant-1',
+              sessionID: 'sess-1',
+              role: 'assistant',
+              finish: 'tool-calls',
+            },
+            parts: [
+              { id: 'tool-1', type: 'tool', state: { status: 'running' } },
+            ],
+          },
+        ],
+      });
+
+      render(React.createElement(SessionChat, {
+        sessionId: 'sess-1',
+        live: true,
+        onStreamingDone,
+      }));
+      act(() => {
+        useSSEOptionsRef.current.onEvent({
+          type: 'session.status',
+          properties: { sessionID: 'sess-1', status: { type: 'busy' } },
+        });
+      });
+
+      await vi.advanceTimersByTimeAsync(5_000);
+
+      expect(refetch).not.toHaveBeenCalled();
+      expect(onStreamingDone).not.toHaveBeenCalled();
+      expect(clientGetMock).toHaveBeenCalledWith('/api/session/sess-1/message');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('finishes streaming when only the local active tool ref is stale', async () => {
+    vi.useFakeTimers();
+    const refetch = vi.fn();
+    const onStreamingDone = vi.fn();
+    try {
+      useSessionMessagesMock.mockReturnValue({
+        messages: [
+          makeMessage({
+            id: 'assistant-1',
+            finish: 'stop',
+            parts: [
+              { id: 'text-1', type: 'text', text: 'done' } as Message['parts'][number],
+            ],
+          }),
+        ],
+        loading: false,
+        refetch,
+        addMessage: vi.fn(),
+        updateMessage: vi.fn(),
+        updateMessagePart: vi.fn(),
+        replaceMessageText: vi.fn(),
+        truncateAfterMessage: vi.fn(),
+      });
+      clientGetMock.mockImplementation((url: string) => {
+        if (url === '/api/session/sess-1/message') {
+          return Promise.resolve({
+            data: [
+              {
+                info: {
+                  id: 'assistant-1',
+                  sessionID: 'sess-1',
+                  role: 'assistant',
+                  finish: 'stop',
+                },
+                parts: [
+                  { id: 'text-1', type: 'text', text: 'done' },
+                ],
+              },
+            ],
+          });
+        }
+        if (url === '/api/session/status') {
+          return Promise.resolve({ data: { 'sess-1': { type: 'idle' } } });
+        }
+        return Promise.resolve({ data: {} });
+      });
+
+      render(React.createElement(SessionChat, {
+        sessionId: 'sess-1',
+        live: true,
+        onStreamingDone,
+      }));
+      act(() => {
+        useSSEOptionsRef.current.onEvent({
+          type: 'session.status',
+          properties: { sessionID: 'sess-1', status: { type: 'busy' } },
+        });
+        useSSEOptionsRef.current.onEvent({
+          type: 'message.part.updated',
+          properties: {
+            part: {
+              id: 'tool-1',
+              messageID: 'assistant-1',
+              sessionID: 'sess-1',
+              type: 'tool',
+              state: { status: 'running' },
+            },
+          },
+        });
+      });
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(5_000);
+      });
+
+      expect(refetch).toHaveBeenCalled();
+      expect(onStreamingDone).toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
 describe('areChatMessagePartsRenderEqual', () => {
   it('detects streamed text updates even when a later tool part exists', () => {
     const sharedToolPart = {
       id: 'tool-1',
       type: 'tool',
-      tool: 'todowrite',
+      tool: 'todo',
       state: { status: 'running', metadata: { step: 1 } },
     } as Message['parts'][number];
 
