@@ -315,12 +315,14 @@ def run_direct_execution(
     phase: str,
     timeout_seconds: int,
     cancellation: TaskCancellation | None = None,
+    session_id: str | None = None,
 ) -> ProcessResult:
     LOG.info(
-        "starting direct execution worker=%s phase=%s timeout=%ss",
+        "starting direct execution worker=%s phase=%s timeout=%ss session=%s",
         worker.name,
         phase,
         timeout_seconds,
+        session_id or "<new>",
     )
     result = driver.execute_direct(
         worker,
@@ -328,6 +330,7 @@ def run_direct_execution(
         phase=phase,
         timeout_seconds=timeout_seconds,
         cancellation=cancellation,
+        session_id=session_id,
     )
     return result.to_process_result()
 
@@ -356,11 +359,11 @@ def record_session_log(
     intent_id: str | None = None,
     status: str = "success",
     fact_ids: list[str] | None = None,
-) -> None:
-    """Record a worker's Flocks session execution in the Cairn session log."""
+) -> str | None:
+    """Create a session-log entry and return its *log_id* (or None if skipped)."""
     if not session_id:
         LOG.debug("record_session_log skipped — no session_id phase=%s", phase)
-        return
+        return None
     preview_text = " ".join(prompt.split())[:200]
     result = client.create_session_log(
         project_id,
@@ -375,3 +378,20 @@ def record_session_log(
         log_id = result.data.get("id")
         if log_id:
             client.link_session_facts(project_id, log_id, fact_ids)
+    if result.ok and result.data:
+        return result.data.get("id")
+    return None
+
+
+def update_session_log(
+    client: CairnClient,
+    project_id: str,
+    log_id: str | None,
+    status: str,
+) -> None:
+    """Update the status of an existing session-log entry."""
+    if not log_id:
+        return
+    result = client.update_session_log(project_id, log_id, status)
+    if not result.ok:
+        LOG.warning("update_session_log failed project=%s log_id=%s status=%s", project_id, log_id, status)

@@ -25,6 +25,7 @@ from flocks.cairn.dispatcher.tasks.common import (
     run_direct_healthcheck,
     run_healthcheck,
     run_worker_process,
+    update_session_log,
     write_graph_snapshot_local,
     write_graph_snapshot_reference,
 )
@@ -99,27 +100,35 @@ def _run_reason_direct(
             },
         )
 
-        session = driver.prepare_session()
+        # Create Flocks session up-front → frontend can see live chat immediately
+        session_id = driver.prepare_session(worker, "reason")
+        log_id = record_session_log(
+            client, project.project.id, session_id, "reason", worker.name,
+            prompt, status="running",
+        )
+
         execute_started = time.perf_counter()
         result = run_direct_execution(
-            driver,
-            worker,
-            prompt,
+            driver, worker, prompt,
             phase="reason",
             timeout_seconds=config.tasks.reason.timeout,
             cancellation=cancellation,
+            session_id=session_id,
         )
         execute_ms = int((time.perf_counter() - execute_started) * 1000)
         total_ms = int((time.perf_counter() - task_started) * 1000)
         cancelled = cancel_reason(result, cancellation)
         if cancelled is not None:
             LOG.info("reason cancelled project=%s worker=%s reason=%s execute_ms=%s", project.project.id, worker.name, cancelled, execute_ms)
+            update_session_log(client, project.project.id, log_id, "cancelled")
             return "cancelled"
         if did_timeout(result):
             LOG.warning("reason timed out project=%s worker=%s execute_ms=%s total_ms=%s stdout_preview=%s stderr_preview=%s", project.project.id, worker.name, execute_ms, total_ms, preview(result.stdout), preview(result.stderr))
+            update_session_log(client, project.project.id, log_id, "timeout")
             return "failed"
         if result.returncode != 0:
             LOG.warning("reason command failed project=%s worker=%s code=%s execute_ms=%s total_ms=%s stdout_preview=%s stderr_preview=%s", project.project.id, worker.name, result.returncode, execute_ms, total_ms, preview(result.stdout), preview(result.stderr))
+            update_session_log(client, project.project.id, log_id, "failed")
             return "failed"
         try:
             model_output = driver.extract_response_text(result.stdout, result.stderr)
@@ -129,20 +138,24 @@ def _run_reason_direct(
             )
         except Exception as exc:
             LOG.warning("reason parse failed project=%s worker=%s error=%s execute_ms=%s total_ms=%s stdout_preview=%s stderr_preview=%s", project.project.id, worker.name, exc, execute_ms, total_ms, preview(result.stdout), preview(result.stderr))
+            update_session_log(client, project.project.id, log_id, "failed")
             return "failed"
         if kind == "rejected":
             LOG.warning("reason rejected project=%s worker=%s execute_ms=%s total_ms=%s stdout_preview=%s", project.project.id, worker.name, execute_ms, total_ms, preview(result.stdout))
+            update_session_log(client, project.project.id, log_id, "rejected")
             return "rejected"
         if kind == "complete":
             response = client.complete(project.project.id, data["from"], data["description"], worker.name)
             if response.status_code == 403:
                 LOG.info("project became inactive during reason complete project=%s worker=%s", project.project.id, worker.name)
+                update_session_log(client, project.project.id, log_id, "success")
                 return "success"
             if not response.ok:
                 LOG.warning("reason complete write failed project=%s worker=%s status=%s body=%s", project.project.id, worker.name, response.status_code, response.text)
+                update_session_log(client, project.project.id, log_id, "failed")
                 return "failed"
             LOG.info("project completed project=%s worker=%s from=%s execute_ms=%s total_ms=%s", project.project.id, worker.name, data["from"], execute_ms, total_ms)
-            record_session_log(client, project.project.id, result.session, "reason", worker.name, prompt, status="success")
+            update_session_log(client, project.project.id, log_id, "success")
             return "success"
         if kind == "intents":
             created = 0
@@ -150,7 +163,7 @@ def _run_reason_direct(
                 response = client.create_intent(project.project.id, intent_data["from"], intent_data["description"], worker.name)
                 if response.status_code == 403:
                     LOG.info("project became inactive during reason intent create project=%s worker=%s created=%s", project.project.id, worker.name, created)
-                    record_session_log(client, project.project.id, result.session, "reason", worker.name, prompt, status="success")
+                    update_session_log(client, project.project.id, log_id, "success")
                     return "success"
                 if response.status_code == 409:
                     LOG.info("reason intent lost race project=%s worker=%s from=%s", project.project.id, worker.name, intent_data["from"])
@@ -162,11 +175,12 @@ def _run_reason_direct(
             LOG.info("reason finished project=%s worker=%s created_intents=%s/%s execute_ms=%s total_ms=%s", project.project.id, worker.name, created, len(data), execute_ms, total_ms)
             if created == 0:
                 LOG.warning("reason created no intents project=%s worker=%s attempted=%s execute_ms=%s total_ms=%s", project.project.id, worker.name, len(data), execute_ms, total_ms)
+                update_session_log(client, project.project.id, log_id, "failed")
                 return "failed"
-            record_session_log(client, project.project.id, result.session, "reason", worker.name, prompt, status="success")
+            update_session_log(client, project.project.id, log_id, "success")
             return "success"
         LOG.info("reason finished without graph change project=%s worker=%s execute_ms=%s total_ms=%s", project.project.id, worker.name, execute_ms, total_ms)
-        record_session_log(client, project.project.id, result.session, "reason", worker.name, prompt, status="success")
+        update_session_log(client, project.project.id, log_id, "success")
         return "success"
     finally:
         lease.stop()
@@ -282,47 +296,41 @@ def _run_reason_container(
         execute_ms = int((time.perf_counter() - execute_started) * 1000)
         total_ms = int((time.perf_counter() - task_started) * 1000)
         session = driver.extract_session(session, result.stdout, result.stderr)
+        # Write running log as soon as session_id is known (container path)
+        log_id = record_session_log(
+            client, project.project.id, session, "reason", worker.name,
+            prompt, status="running",
+        )
         cancelled = cancel_reason(result, cancellation)
         if cancelled is not None:
             LOG.info(
                 "reason cancelled project=%s worker=%s reason=%s execute_ms=%s",
-                project.project.id,
-                worker.name,
-                cancelled,
-                execute_ms,
+                project.project.id, worker.name, cancelled, execute_ms,
             )
+            update_session_log(client, project.project.id, log_id, "cancelled")
             return "cancelled"
         if lease.failure is not None:
             LOG.warning(
                 "heartbeat lost during reason project=%s worker=%s status=%s execute_ms=%s",
-                project.project.id,
-                worker.name,
-                lease.failure.status_code,
-                execute_ms,
+                project.project.id, worker.name, lease.failure.status_code, execute_ms,
             )
+            update_session_log(client, project.project.id, log_id, "failed")
             return "failed"
         if did_timeout(result):
             LOG.warning(
                 "reason timed out project=%s worker=%s execute_ms=%s total_ms=%s stdout_preview=%s stderr_preview=%s",
-                project.project.id,
-                worker.name,
-                execute_ms,
-                total_ms,
-                preview(result.stdout),
-                preview(result.stderr),
+                project.project.id, worker.name, execute_ms, total_ms,
+                preview(result.stdout), preview(result.stderr),
             )
+            update_session_log(client, project.project.id, log_id, "timeout")
             return "failed"
         if result.returncode != 0:
             LOG.warning(
                 "reason command failed project=%s worker=%s code=%s execute_ms=%s total_ms=%s stdout_preview=%s stderr_preview=%s",
-                project.project.id,
-                worker.name,
-                result.returncode,
-                execute_ms,
-                total_ms,
-                preview(result.stdout),
-                preview(result.stderr),
+                project.project.id, worker.name, result.returncode, execute_ms, total_ms,
+                preview(result.stdout), preview(result.stderr),
             )
+            update_session_log(client, project.project.id, log_id, "failed")
             return "failed"
         try:
             model_output = driver.extract_response_text(result.stdout, result.stderr)
@@ -356,26 +364,20 @@ def _run_reason_container(
             response = client.complete(project.project.id, data["from"], data["description"], worker.name)
             if response.status_code == 403:
                 LOG.info("project became inactive during reason complete project=%s worker=%s", project.project.id, worker.name)
-                record_session_log(client, project.project.id, session, "reason", worker.name, prompt, status="success")
+                update_session_log(client, project.project.id, log_id, "success")
                 return "success"
             if not response.ok:
                 LOG.warning(
                     "reason complete write failed project=%s worker=%s status=%s body=%s",
-                    project.project.id,
-                    worker.name,
-                    response.status_code,
-                    response.text,
+                    project.project.id, worker.name, response.status_code, response.text,
                 )
+                update_session_log(client, project.project.id, log_id, "failed")
                 return "failed"
             LOG.info(
                 "project completed project=%s worker=%s from=%s execute_ms=%s total_ms=%s",
-                project.project.id,
-                worker.name,
-                data["from"],
-                execute_ms,
-                total_ms,
+                project.project.id, worker.name, data["from"], execute_ms, total_ms,
             )
-            record_session_log(client, project.project.id, session, "reason", worker.name, prompt, status="success")
+            update_session_log(client, project.project.id, log_id, "success")
             return "success"
         if kind == "intents":
             created = 0
@@ -383,7 +385,7 @@ def _run_reason_container(
                 response = client.create_intent(project.project.id, intent_data["from"], intent_data["description"], worker.name)
                 if response.status_code == 403:
                     LOG.info("project became inactive during reason intent create project=%s worker=%s created=%s", project.project.id, worker.name, created)
-                    record_session_log(client, project.project.id, session, "reason", worker.name, prompt, status="success")
+                    update_session_log(client, project.project.id, log_id, "success")
                     return "success"
                 if response.status_code == 409:
                     LOG.info("reason intent lost race project=%s worker=%s from=%s", project.project.id, worker.name, intent_data["from"])
@@ -391,49 +393,32 @@ def _run_reason_container(
                 if not response.ok:
                     LOG.warning(
                         "reason intent write failed project=%s worker=%s status=%s body=%s",
-                        project.project.id,
-                        worker.name,
-                        response.status_code,
-                        response.text,
+                        project.project.id, worker.name, response.status_code, response.text,
                     )
                     continue
                 created += 1
                 LOG.info(
                     "reason created intent project=%s worker=%s from=%s description=%s",
-                    project.project.id,
-                    worker.name,
-                    intent_data["from"],
-                    intent_data["description"],
+                    project.project.id, worker.name, intent_data["from"], intent_data["description"],
                 )
             LOG.info(
                 "reason finished project=%s worker=%s created_intents=%s/%s execute_ms=%s total_ms=%s",
-                project.project.id,
-                worker.name,
-                created,
-                len(data),
-                execute_ms,
-                total_ms,
+                project.project.id, worker.name, created, len(data), execute_ms, total_ms,
             )
             if created == 0:
                 LOG.warning(
                     "reason created no intents project=%s worker=%s attempted=%s execute_ms=%s total_ms=%s",
-                    project.project.id,
-                    worker.name,
-                    len(data),
-                    execute_ms,
-                    total_ms,
+                    project.project.id, worker.name, len(data), execute_ms, total_ms,
                 )
+                update_session_log(client, project.project.id, log_id, "failed")
                 return "failed"
-            record_session_log(client, project.project.id, session, "reason", worker.name, prompt, status="success")
+            update_session_log(client, project.project.id, log_id, "success")
             return "success"
         LOG.info(
             "reason finished without graph change project=%s worker=%s execute_ms=%s total_ms=%s",
-            project.project.id,
-            worker.name,
-            execute_ms,
-            total_ms,
+            project.project.id, worker.name, execute_ms, total_ms,
         )
-        record_session_log(client, project.project.id, session, "reason", worker.name, prompt, status="success")
+        update_session_log(client, project.project.id, log_id, "success")
         return "success"
     finally:
         lease.stop()

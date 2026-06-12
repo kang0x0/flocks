@@ -177,6 +177,7 @@ class MockDriver(SeedSessionDriver):
         phase: str,
         timeout_seconds: float = 300,
         cancellation: object | None = None,
+        session_id: str | None = None,
     ) -> DirectExecuteResult:
         behavior = resolve_mock_behavior(worker.name, worker.env)
         behavior_json = json.dumps(behavior, ensure_ascii=False)

@@ -77,8 +77,21 @@ class WorkerDriver(abc.ABC):
         phase: str,
         timeout_seconds: float = 300,
         cancellation: object | None = None,
+        session_id: str | None = None,
     ) -> DirectExecuteResult:
         raise NotImplementedError("direct execution not supported")
+
+    def conclude_direct(
+        self,
+        worker: WorkerConfig,
+        prompt: str,
+        session_id: str,
+        *,
+        phase: str = "conclude",
+        timeout_seconds: float = 300,
+        cancellation: object | None = None,
+    ) -> DirectExecuteResult:
+        raise NotImplementedError("direct conclude not supported")
 
     def extract_session(self, session: str | None, stdout: str, stderr: str) -> str | None:
         return session

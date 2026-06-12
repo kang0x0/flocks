@@ -221,6 +221,14 @@ class CairnClient:
             LOG.warning("create_session_log failed: %s", exc)
             return ApiResult(status_code=0, text=str(exc))
 
+    def update_session_log(self, project_id: str, log_id: str, status: str) -> ApiResult:
+        try:
+            self._storage.update_session_log_status(log_id, status)
+            return ApiResult(status_code=200, data={"id": log_id, "status": status})
+        except Exception as exc:
+            LOG.warning("update_session_log failed: %s", exc)
+            return ApiResult(status_code=0, text=str(exc))
+
     def list_session_logs(self, project_id: str) -> ApiResult:
         try:
             rows = self._storage.list_session_logs(project_id)

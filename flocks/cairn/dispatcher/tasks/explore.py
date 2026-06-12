@@ -21,6 +21,7 @@ from flocks.cairn.dispatcher.tasks.common import (
     run_direct_healthcheck,
     run_healthcheck,
     run_worker_process,
+    update_session_log,
     write_conclude_result,
     write_conclude_result_with_fact_id,
     write_graph_snapshot_local,
@@ -88,20 +89,26 @@ def _run_explore_direct(
             },
         )
 
-        session = driver.prepare_session()
+        # Create Flocks session up-front → frontend can see live chat immediately
+        session_id = driver.prepare_session(worker, "explore")
+        log_id = record_session_log(
+            client, project.project.id, session_id, "explore", worker.name,
+            prompt, intent_id=intent.id, status="running",
+        )
+
         execute_started = time.perf_counter()
         first = run_direct_execution(
-            driver,
-            worker,
-            prompt,
+            driver, worker, prompt,
             phase="explore",
             timeout_seconds=config.tasks.explore.timeout,
             cancellation=cancellation,
+            session_id=session_id,
         )
         execute_ms = int((time.perf_counter() - execute_started) * 1000)
         cancelled = cancel_reason(first, cancellation)
         if cancelled is not None:
             LOG.info("explore cancelled project=%s intent=%s worker=%s reason=%s execute_ms=%s", project.project.id, intent.id, worker.name, cancelled, execute_ms)
+            update_session_log(client, project.project.id, log_id, "cancelled")
             best_effort_release(client, project.project.id, intent.id, worker.name)
             return "cancelled"
         if not did_timeout(first) and first.returncode == 0:
@@ -111,24 +118,24 @@ def _run_explore_direct(
                 kind, description = validate_explore_payload(payload)
             except Exception as exc:
                 LOG.warning("explore parse failed project=%s intent=%s worker=%s error=%s execute_ms=%s total_ms=%s stdout_preview=%s stderr_preview=%s", project.project.id, intent.id, worker.name, exc, execute_ms, int((time.perf_counter() - task_started) * 1000), preview(first.stdout), preview(first.stderr))
+                update_session_log(client, project.project.id, log_id, "failed")
                 best_effort_release(client, project.project.id, intent.id, worker.name)
                 return "failed"
             if kind == "rejected":
                 LOG.warning("explore rejected project=%s intent=%s worker=%s execute_ms=%s total_ms=%s stdout_preview=%s", project.project.id, intent.id, worker.name, execute_ms, int((time.perf_counter() - task_started) * 1000), preview(first.stdout))
+                update_session_log(client, project.project.id, log_id, "rejected")
                 best_effort_release(client, project.project.id, intent.id, worker.name)
                 return "rejected"
             conclude = write_conclude_result_with_fact_id(client, project.project.id, intent.id, worker.name, description, source="explore_execute", phase_ms=execute_ms, total_ms=int((time.perf_counter() - task_started) * 1000))
-            record_session_log(
-                client, project.project.id, first.session, "explore", worker.name, prompt,
-                intent_id=intent.id, status="success",
-                fact_ids=[conclude.fact_id] if conclude.fact_id else None,
-            )
+            update_session_log(client, project.project.id, log_id, conclude.status if conclude.status == "success" else "failed")
             return conclude.status
         if did_timeout(first):
             LOG.warning("explore timed out project=%s intent=%s worker=%s execute_ms=%s total_ms=%s stdout_preview=%s stderr_preview=%s", project.project.id, intent.id, worker.name, execute_ms, int((time.perf_counter() - task_started) * 1000), preview(first.stdout), preview(first.stderr))
+            update_session_log(client, project.project.id, log_id, "timeout")
             best_effort_release(client, project.project.id, intent.id, worker.name)
             return "failed"
         LOG.warning("explore command failed project=%s intent=%s worker=%s code=%s execute_ms=%s total_ms=%s stdout_preview=%s stderr_preview=%s", project.project.id, intent.id, worker.name, first.returncode, execute_ms, int((time.perf_counter() - task_started) * 1000), preview(first.stdout), preview(first.stderr))
+        update_session_log(client, project.project.id, log_id, "failed")
         best_effort_release(client, project.project.id, intent.id, worker.name)
         return "failed"
     except Exception:
@@ -236,6 +243,11 @@ def _run_explore_container(
         )
         execute_ms = int((time.perf_counter() - execute_started) * 1000)
         session = driver.extract_session(session, first.stdout, first.stderr)
+        # Write running log as soon as session_id is known (container path)
+        log_id = record_session_log(
+            client, project.project.id, session, "explore", worker.name,
+            prompt, intent_id=intent.id, status="running",
+        )
         cancelled = cancel_reason(first, cancellation)
         if cancelled is not None:
             LOG.info(
@@ -246,6 +258,7 @@ def _run_explore_container(
                 cancelled,
                 execute_ms,
             )
+            update_session_log(client, project.project.id, log_id, "cancelled")
             best_effort_release(client, project.project.id, intent.id, worker.name)
             return "cancelled"
         if lease.failure is not None:
@@ -257,6 +270,7 @@ def _run_explore_container(
                 lease.failure.status_code,
                 execute_ms,
             )
+            update_session_log(client, project.project.id, log_id, "failed")
             best_effort_release(client, project.project.id, intent.id, worker.name)
             return "failed"
         if not did_timeout(first) and first.returncode == 0:
@@ -300,6 +314,7 @@ def _run_explore_container(
                     int((time.perf_counter() - task_started) * 1000),
                     preview(first.stdout),
                 )
+                update_session_log(client, project.project.id, log_id, "rejected")
                 best_effort_release(client, project.project.id, intent.id, worker.name)
                 return "rejected"
             conclude = write_conclude_result_with_fact_id(
@@ -312,11 +327,7 @@ def _run_explore_container(
                 phase_ms=execute_ms,
                 total_ms=int((time.perf_counter() - task_started) * 1000),
             )
-            record_session_log(
-                client, project.project.id, session, "explore", worker.name, prompt,
-                intent_id=intent.id, status="success",
-                fact_ids=[conclude.fact_id] if conclude.fact_id else None,
-            )
+            update_session_log(client, project.project.id, log_id, conclude.status if conclude.status == "success" else "failed")
             return conclude.status
         if did_timeout(first):
             LOG.warning(

@@ -488,6 +488,17 @@ def create_session_log(
     return log_id
 
 
+def update_session_log_status(
+    conn: sqlite3.Connection,
+    log_id: str,
+    status: str,
+) -> None:
+    conn.execute(
+        "UPDATE worker_session_logs SET status = ? WHERE id = ?",
+        (status, log_id),
+    )
+
+
 def link_session_facts(
     conn: sqlite3.Connection,
     log_id: str,

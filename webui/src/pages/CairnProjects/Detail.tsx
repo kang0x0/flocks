@@ -3,10 +3,10 @@ import { useTranslation } from 'react-i18next';
 import { useParams, useNavigate } from 'react-router-dom';
 import cytoscape, { type Core, type EventObject } from 'cytoscape';
 import dagre from 'cytoscape-dagre';
+import { Loader2 } from 'lucide-react';
 import LoadingSpinner from '@/components/common/LoadingSpinner';
+import SessionViewDialog from '@/components/common/SessionViewDialog';
 import { cairnApi, type ProjectDetail, type Fact, type Intent, type Hint, type SessionLogEntry } from '@/api/cairn';
-import { sessionApi } from '@/api/session';
-import type { Message, MessagePart } from '@/types';
 
 cytoscape.use(dagre as any);
 
@@ -248,8 +248,9 @@ export default function CairnProjectDetail() {
   // Session log state
   const [sessionLogs, setSessionLogs] = useState<SessionLogEntry[]>([]);
   const [relatedSessionLogs, setRelatedSessionLogs] = useState<SessionLogEntry[]>([]);
-  // Map from sessionId -> messages or 'loading' — inline expand
-  const [expandedSessions, setExpandedSessions] = useState<Record<string, Message[] | 'loading'>>({});
+  // Currently viewing session dialog — replaces the old expand-down inline view
+  const [viewingSessionId, setViewingSessionId] = useState<string | null>(null);
+  const [viewingSessionContext, setViewingSessionContext] = useState<{ log: SessionLogEntry } | null>(null);
 
   const loadProject = useCallback(async () => {
     if (!id) return;
@@ -305,44 +306,22 @@ export default function CairnProjectDetail() {
     load();
   }, [id, selectedNodeType, selectedNodeId]);
 
-  // Toggle inline session messages expand/collapse
-  const handleToggleSession = useCallback(async (sessionId: string) => {
-    // If already expanded, collapse; otherwise start loading
-    const shouldFetch = await new Promise<boolean>((resolve) => {
-      setExpandedSessions((prev) => {
-        if (sessionId in prev) {
-          const next = { ...prev };
-          delete next[sessionId];
-          resolve(false);
-          return next;
-        }
-        resolve(true);
-        return { ...prev, [sessionId]: 'loading' };
-      });
-    });
-
-    if (!shouldFetch) return;
-
-    try {
-      const rawData = await sessionApi.getMessages(sessionId);
-      const transformed = (Array.isArray(rawData) ? rawData : []).map((item: any) => {
-        const info = item.info || item;
-        return {
-          ...info,
-          parts: item.parts || info.parts || [],
-        };
-      });
-      setExpandedSessions((prev) => {
-        if (!(sessionId in prev)) return prev;
-        return { ...prev, [sessionId]: transformed };
-      });
-    } catch {
-      setExpandedSessions((prev) => {
-        if (!(sessionId in prev)) return prev;
-        return { ...prev, [sessionId]: [] };
-      });
-    }
+  // View a session in chat-dialog mode (replaces old expand-down inline view)
+  const handleViewSession = useCallback((sessionId: string, log: SessionLogEntry) => {
+    setViewingSessionId(sessionId);
+    setViewingSessionContext({ log });
   }, []);
+
+  const handleBackToLogList = useCallback(() => {
+    setViewingSessionId(null);
+    setViewingSessionContext(null);
+  }, []);
+
+  // Reset session dialog when switching tabs or nodes
+  useEffect(() => {
+    setViewingSessionId(null);
+    setViewingSessionContext(null);
+  }, [sideTab, selectedNodeId, selectedNodeType]);
 
   useEffect(() => {
     setLoading(true);
@@ -1526,10 +1505,22 @@ export default function CairnProjectDetail() {
                       <div className="pt-4 border-t border-slate-100 space-y-2">
                         <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-widest mb-2">{t('detail.llmSessions')}</p>
                         {relatedSessionLogs.map((log) => (
-                          <SessionLogMiniCard key={log.id} log={log} onToggle={handleToggleSession} expandedSessions={expandedSessions} />
+                          <SessionLogMiniCard key={log.id} log={log} onView={handleViewSession} />
                         ))}
                       </div>
                     )}
+                    {/* Running producing intent without session logs for this fact yet */}
+                    {relatedSessionLogs.length === 0 && (() => {
+                      const producingIntent = getProducingIntent(selectedNodeId!, intents);
+                      if (producingIntent?.worker && !producingIntent.concluded_at) {
+                        return (
+                          <div className="pt-4 border-t border-slate-100">
+                            <p className="text-[10px] text-slate-400 italic">{t('detail.sessionRunning')}</p>
+                          </div>
+                        );
+                      }
+                      return null;
+                    })()}
                   </div>
                 </section>
               )}
@@ -1562,8 +1553,14 @@ export default function CairnProjectDetail() {
                       <div className="pt-4 border-t border-slate-100 space-y-2">
                         <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-widest mb-2">{t('detail.llmSessions')}</p>
                         {relatedSessionLogs.map((log) => (
-                          <SessionLogMiniCard key={log.id} log={log} onToggle={handleToggleSession} expandedSessions={expandedSessions} />
+                          <SessionLogMiniCard key={log.id} log={log} onView={handleViewSession} />
                         ))}
+                      </div>
+                    )}
+                    {/* Running intent without session logs yet */}
+                    {relatedSessionLogs.length === 0 && selectedIntentRecord()?.worker && !selectedIntentRecord()?.concluded_at && (
+                      <div className="pt-4 border-t border-slate-100">
+                        <p className="text-[10px] text-slate-400 italic">{t('detail.sessionRunning')}</p>
                       </div>
                     )}
                   </div>
@@ -1670,7 +1667,6 @@ export default function CairnProjectDetail() {
             </div>
           </div>
         ))}
-
         {/* Session logs section */}
         {sessionLogs.length > 0 && (
           <>
@@ -1680,7 +1676,7 @@ export default function CairnProjectDetail() {
               <div className="h-px flex-1 bg-slate-100"></div>
             </div>
             {sessionLogs.map((log) => (
-              <SessionLogCard key={log.id} log={log} onToggle={handleToggleSession} expandedSessions={expandedSessions} />
+              <SessionLogCard key={log.id} log={log} onView={handleViewSession} />
             ))}
           </>
         )}
@@ -1738,6 +1734,18 @@ export default function CairnProjectDetail() {
           </div>
         </ModalBase>
       )}
+
+      {/* LLM Session dialog popup */}
+      {viewingSessionId && viewingSessionContext && (
+        <SessionViewDialog
+          open={true}
+          onClose={handleBackToLogList}
+          sessionId={viewingSessionId}
+          title={`${getPhaseLabel(viewingSessionContext.log.phase)} - ${viewingSessionContext.log.worker}`}
+          subtitle={`${viewingSessionContext.log.status} · ${formatSessionTime(viewingSessionContext.log.created_at)}`}
+          live={viewingSessionContext.log.status === 'running'}
+        />
+      )}
     </div>
   );
 }
@@ -1784,20 +1792,16 @@ function getPhaseColor(phase: string): string {
 }
 
 /** Card for session log in the Log panel */
-function SessionLogCard({ log, onToggle, expandedSessions }: {
+function SessionLogCard({ log, onView }: {
   log: SessionLogEntry;
-  onToggle: (sessionId: string) => void;
-  expandedSessions: Record<string, Message[] | 'loading'>;
+  onView: (sessionId: string, log: SessionLogEntry) => void;
 }) {
   const { t } = useTranslation('cairn');
-  const statusColor = log.status === 'success' ? 'text-teal-600' : 'text-rose-500';
-  const isExpanded = log.session_id in expandedSessions;
-  const messages = expandedSessions[log.session_id];
-  const isLoading = messages === 'loading';
-  const sessionMessages = isLoading ? [] : (messages as Message[] | undefined) || [];
+  const isRunning = log.status === 'running';
+  const statusColor = isRunning ? 'text-amber-600' : log.status === 'success' ? 'text-teal-600' : 'text-rose-500';
 
   return (
-    <div className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+    <div className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden hover:shadow-md transition-shadow">
       <div className="px-4 py-3 border-b border-slate-100 bg-slate-50/80 flex items-center justify-between gap-3">
         <div className="flex items-center gap-2 min-w-0">
           <span className={`px-2 py-0.5 rounded-md text-[10px] font-semibold ${getPhaseColor(log.phase)}`}>
@@ -1806,6 +1810,7 @@ function SessionLogCard({ log, onToggle, expandedSessions }: {
           <span className="text-[11px] font-mono text-slate-500 truncate">{log.worker}</span>
         </div>
         <div className="flex items-center gap-2 shrink-0">
+          {isRunning && <Loader2 className="w-3 h-3 text-amber-500 animate-spin" />}
           <span className={`text-[10px] font-medium ${statusColor}`}>{log.status}</span>
           <span className="text-[10px] text-slate-400 tabular-nums">{formatSessionTime(log.created_at)}</span>
         </div>
@@ -1813,212 +1818,43 @@ function SessionLogCard({ log, onToggle, expandedSessions }: {
       <div className="px-4 py-3 flex items-center justify-between gap-3">
         <p className="text-xs text-slate-600 leading-relaxed break-words line-clamp-2 min-w-0 flex-1">{log.prompt_preview || '—'}</p>
         <button
-          onClick={() => onToggle(log.session_id)}
-          className={`px-3 py-1.5 rounded-lg border text-[10px] font-medium transition shrink-0 whitespace-nowrap ${
-            isExpanded
-              ? 'border-slate-300 bg-slate-100 text-slate-600 hover:bg-slate-200'
-              : 'border-brand-200 text-brand-600 hover:bg-brand-50'
-          }`}
+          onClick={() => onView(log.session_id, log)}
+          className="px-3 py-1.5 rounded-lg border border-brand-200 text-brand-600 text-[10px] font-medium transition shrink-0 whitespace-nowrap hover:bg-brand-50"
         >
-          {isExpanded ? t('detail.collapse') : t('detail.view')}
+          {isRunning ? t('detail.watchLive') : t('detail.view')}
         </button>
       </div>
-      {/* Inline expanded messages */}
-      {isExpanded && (
-        <div className="border-t border-slate-100">
-          {isLoading ? (
-            <div className="flex items-center justify-center py-6">
-              <LoadingSpinner size="md" />
-            </div>
-          ) : sessionMessages.length === 0 ? (
-            <div className="text-center py-6 text-xs text-slate-400">{t('detail.noMessagesInSession')}</div>
-          ) : (
-            <div className="px-4 py-3 space-y-3 max-h-80 overflow-y-auto">
-              {sessionMessages.map((msg) => (
-                <SessionMessageRow key={msg.id} message={msg} />
-              ))}
-            </div>
-          )}
-        </div>
-      )}
     </div>
   );
 }
 
 /** Mini card for session log in the Detail panel (fact/intent) */
-function SessionLogMiniCard({ log, onToggle, expandedSessions }: {
+function SessionLogMiniCard({ log, onView }: {
   log: SessionLogEntry;
-  onToggle: (sessionId: string) => void;
-  expandedSessions: Record<string, Message[] | 'loading'>;
+  onView: (sessionId: string, log: SessionLogEntry) => void;
 }) {
   const { t } = useTranslation('cairn');
-  const isExpanded = log.session_id in expandedSessions;
-  const messages = expandedSessions[log.session_id];
-  const isLoading = messages === 'loading';
-  const sessionMessages = isLoading ? [] : (messages as Message[] | undefined) || [];
 
   return (
-    <div>
-      <div className="flex items-center justify-between gap-2 rounded-xl border border-slate-200 bg-slate-50/60 px-3 py-2 text-xs">
-        <div className="flex items-center gap-2 min-w-0 flex-1">
-          <span className={`px-1.5 py-0.5 rounded text-[9px] font-semibold ${getPhaseColor(log.phase)}`}>
-            {getPhaseLabel(log.phase)}
-          </span>
-          <span className="font-mono text-slate-500 truncate">{log.worker}</span>
-          <span className="text-slate-400 text-[10px]">{formatSessionTime(log.created_at)}</span>
-        </div>
-        <button
-          onClick={() => onToggle(log.session_id)}
-          className={`px-2 py-1 rounded-lg border text-[9px] font-medium transition shrink-0 ${
-            isExpanded
-              ? 'border-slate-300 bg-slate-100 text-slate-500'
-              : 'border-brand-200 text-brand-600 hover:bg-brand-50'
-          }`}
-        >
-          {isExpanded ? t('detail.collapse') : t('detail.view')}
-        </button>
+    <div className="flex items-center justify-between gap-2 rounded-xl border border-slate-200 bg-slate-50/60 px-3 py-2 text-xs hover:shadow-sm transition-shadow cursor-pointer"
+      onClick={() => onView(log.session_id, log)}>
+      <div className="flex items-center gap-2 min-w-0 flex-1">
+        <span className={`px-1.5 py-0.5 rounded text-[9px] font-semibold ${getPhaseColor(log.phase)}`}>
+          {getPhaseLabel(log.phase)}
+        </span>
+        <span className="font-mono text-slate-500 truncate">{log.worker}</span>
+        <span className="text-slate-400 text-[10px]">{formatSessionTime(log.created_at)}</span>
       </div>
-      {/* Inline expanded messages */}
-      {isExpanded && (
-        <div className="ml-1 mt-1.5 border-l-2 border-slate-200 pl-3">
-          {isLoading ? (
-            <div className="flex items-center justify-center py-4">
-              <LoadingSpinner size="sm" />
-            </div>
-          ) : sessionMessages.length === 0 ? (
-            <div className="text-center py-4 text-[11px] text-slate-400">{t('detail.noMessages')}</div>
-          ) : (
-            <div className="space-y-2 max-h-60 overflow-y-auto">
-              {sessionMessages.map((msg) => (
-                <SessionMessageRow key={msg.id} message={msg} />
-              ))}
-            </div>
-          )}
-        </div>
-      )}
+      <button
+        onClick={(e) => { e.stopPropagation(); onView(log.session_id, log); }}
+        className="px-2 py-1 rounded-lg border border-brand-200 text-brand-600 text-[9px] font-medium transition shrink-0 hover:bg-brand-50"
+      >
+        {t('detail.view')}
+      </button>
     </div>
   );
 }
 
-/** Single message row rendered in the inline expanded view */
-function SessionMessageRow({ message }: { message: Message }) {
-  const { t } = useTranslation('cairn');
-  const parts: MessagePart[] = Array.isArray((message as any).parts) ? (message as any).parts : [];
-  const isUser = message.role === 'user';
-
-  return (
-    <div className="flex gap-2.5">
-      <div className={`shrink-0 w-5 h-5 rounded-full flex items-center justify-center text-[8px] font-bold text-white mt-0.5 ${
-        isUser ? 'bg-slate-400' : 'bg-rose-400'
-      }`}>
-        {isUser ? 'U' : 'A'}
-      </div>
-      <div className="flex-1 min-w-0 space-y-1">
-        <div className="text-[10px] font-semibold text-slate-400 flex items-center gap-2">
-          <span>{isUser ? t('detail.user') : t('detail.assistant')}</span>
-          {(message as any).modelID && <span className="font-mono text-slate-300">{(message as any).modelID}</span>}
-        </div>
-        <div className="space-y-2">
-          {parts.length === 0 && !isUser && (
-            <div className="flex items-center gap-1 py-1">
-              <span className="w-1 h-1 rounded-full bg-slate-400 animate-bounce" />
-              <span className="w-1 h-1 rounded-full bg-slate-400 animate-bounce [animation-delay:0.15s]" />
-              <span className="w-1 h-1 rounded-full bg-slate-400 animate-bounce [animation-delay:0.3s]" />
-            </div>
-          )}
-          {parts.map((part: MessagePart, i: number) => (
-            <div key={part.id || i} className="first:mt-0">
-              {/* Text */}
-              {part.type === 'text' && part.text && (
-                <div className={`text-sm leading-relaxed break-words whitespace-pre-wrap ${
-                  isUser ? 'text-slate-700' : 'text-slate-700'
-                }`}>
-                  {part.text.length > 500 ? part.text.slice(0, 500) + '…' : part.text}
-                </div>
-              )}
-
-              {/* Tool call */}
-              {part.type === 'tool' && (
-                <SessionToolPart part={part} />
-              )}
-
-              {/* Reasoning / thinking */}
-              {(part.type === 'reasoning' || part.type === 'thinking') && (part.text || (part as any).thinking) && (
-                <details className="group rounded-lg border border-slate-200 bg-slate-50/60">
-                  <summary className="px-2 py-1.5 cursor-pointer list-none flex items-center gap-1.5 text-[11px] text-violet-600 font-medium select-none hover:bg-slate-100/50 transition-colors rounded-lg">
-                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="1.8" viewBox="0 0 24 24"><path d="M12 3v3m0 12v3m-7.07-7.07 2.12-2.12m9.9-1.42 2.12-2.12M4.5 12h3m9 0h3M7.05 7.05l-1.41-1.41M16.95 16.95l1.41 1.41"/><circle cx="12" cy="12" r="3.5"/></svg>
-                    <span className="truncate">Thinking</span>
-                    <svg className="w-2.5 h-2.5 ml-auto text-slate-400 transition-transform group-open:rotate-180" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg>
-                  </summary>
-                  <div className="px-2.5 py-2 text-[11px] text-slate-500 font-mono whitespace-pre-wrap leading-relaxed max-h-32 overflow-y-auto border-t border-slate-200/60">
-                    {part.text || (part as any).thinking || ''}
-                  </div>
-                </details>
-              )}
-
-              {/* File / image attachment */}
-              {part.type === 'file' && (part as any).url && (
-                <div className="flex items-center gap-2 text-xs text-slate-500 bg-slate-50 rounded-lg px-2.5 py-1.5 border border-slate-200">
-                  <svg className="w-3.5 h-3.5 shrink-0" fill="none" stroke="currentColor" strokeWidth="1.6" viewBox="0 0 24 24"><path d="M14.25 3H7.5A2.25 2.25 0 0 0 5.25 5.25v13.5A2.25 2.25 0 0 0 7.5 21h9a2.25 2.25 0 0 0 2.25-2.25V8.25L14.25 3Z"/><path d="M14.25 3v5.25h4.5"/></svg>
-                  <span className="truncate">{(part as any).filename || 'file'}</span>
-                </div>
-              )}
-            </div>
-          ))}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-/** Simplified tool call card for inline session view */
-function SessionToolPart({ part }: { part: MessagePart }) {
-  const { t } = useTranslation('cairn');
-  const toolName = part.tool || 'unknown';
-  const state = (part as any).state || {};
-  const status = state.status || 'completed';
-
-  return (
-    <details className="group/tool rounded-lg bg-slate-50 border border-slate-200 overflow-hidden">
-      <summary className="px-2.5 py-1.5 cursor-pointer list-none flex items-center gap-1.5 min-w-0 select-none hover:bg-slate-100/50 transition-colors">
-        <span className="text-slate-500 flex-shrink-0">
-          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="1.8" viewBox="0 0 24 24"><path d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 0 0 2.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 0 0 1.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 0 0-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 0 0-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 0 0-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 0 0-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 0 0 1.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065Z"/><path d="M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z"/></svg>
-        </span>
-        <span className="text-[11px] font-medium text-slate-700">{toolName.replace(/_/g, ' ')}</span>
-        <span className={`ml-auto text-[10px] font-medium px-1.5 py-0.5 rounded ${
-          status === 'completed' ? 'bg-teal-50 text-teal-600' :
-          status === 'running' ? 'bg-sky-50 text-sky-600' :
-          status === 'error' ? 'bg-red-50 text-red-500' :
-          'bg-slate-100 text-slate-500'
-        }`}>
-          {status}
-        </span>
-        <svg className="w-2.5 h-2.5 text-slate-400 transition-transform group-open/tool:rotate-180" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg>
-      </summary>
-      {state.input && (
-        <div className="border-t border-slate-200/60 px-2.5 py-2">
-          <div className="text-[10px] font-medium text-slate-400 mb-1">{t('detail.input')}</div>
-          <pre className="p-2 bg-slate-800 text-slate-200 rounded-md text-[10px] overflow-x-auto font-mono leading-relaxed max-h-32 overflow-y-auto">
-            {JSON.stringify(state.input, null, 2)}
-          </pre>
-        </div>
-      )}
-      {status === 'completed' && state.output !== undefined && (
-        <div className="border-t border-slate-200/60 px-2.5 py-2">
-          <div className="text-[10px] font-medium text-slate-400 mb-1">{t('detail.output')}</div>
-          <pre className="p-2 bg-slate-800 text-green-300 rounded-md text-[10px] overflow-x-auto font-mono leading-relaxed max-h-32 overflow-y-auto">
-            {typeof state.output === 'string' ? state.output : JSON.stringify(state.output, null, 2)}
-          </pre>
-        </div>
-      )}
-      {status === 'error' && state.error && (
-        <div className="px-2.5 py-1.5 bg-red-50 border-t border-red-100 text-[11px] text-red-600">
-          {state.error}
-        </div>
-      )}
-    </details>
-  );
-}
 
 function HintFormContent({ projectId, onClose, onAdded }: { projectId: string; onClose: () => void; onAdded: () => void }) {
   const { t } = useTranslation('cairn');

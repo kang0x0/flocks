@@ -25,6 +25,7 @@ from flocks.cairn.dispatcher.tasks.common import (
     run_direct_healthcheck,
     run_healthcheck,
     run_worker_process,
+    update_session_log,
     write_conclude_result,
     write_conclude_result_with_fact_id,
 )
@@ -85,20 +86,26 @@ def _run_bootstrap_direct(
             _bootstrap_prompt_replacements(project),
         )
 
-        session = driver.prepare_session()
+        # Create Flocks session up-front → frontend can see live chat immediately
+        session_id = driver.prepare_session(worker, "bootstrap")
+        log_id = record_session_log(
+            client, project.project.id, session_id, "bootstrap", worker.name,
+            prompt, intent_id=intent.id, status="running",
+        )
+
         execute_started = time.perf_counter()
         first = run_direct_execution(
-            driver,
-            worker,
-            prompt,
+            driver, worker, prompt,
             phase="bootstrap",
             timeout_seconds=config.tasks.bootstrap.timeout,
             cancellation=cancellation,
+            session_id=session_id,
         )
         execute_ms = int((time.perf_counter() - execute_started) * 1000)
         cancelled = cancel_reason(first, cancellation)
         if cancelled is not None:
             LOG.info("bootstrap cancelled project=%s intent=%s worker=%s reason=%s execute_ms=%s", project.project.id, intent.id, worker.name, cancelled, execute_ms)
+            update_session_log(client, project.project.id, log_id, "cancelled")
             best_effort_release(client, project.project.id, intent.id, worker.name)
             return "cancelled"
         if not did_timeout(first) and first.returncode == 0:
@@ -107,18 +114,35 @@ def _run_bootstrap_direct(
                 payload = parse_json_output(model_output)
                 kind, data = validate_bootstrap_execute_payload(payload)
             except Exception as exc:
-                LOG.warning("bootstrap parse failed project=%s intent=%s worker=%s error=%s execute_ms=%s total_ms=%s", project.project.id, intent.id, worker.name, exc, execute_ms, int((time.perf_counter() - task_started) * 1000))
-                return "failed"
+                LOG.warning("bootstrap parse failed project=%s intent=%s worker=%s error=%s execute_ms=%s total_ms=%s — falling back to conclude", project.project.id, intent.id, worker.name, exc, execute_ms, int((time.perf_counter() - task_started) * 1000))
+                return _run_bootstrap_conclude_direct(
+                    config, client, driver, project, intent, worker,
+                    session_id, lease, cancellation, prompt,
+                    execute_ms=execute_ms, total_ms=int((time.perf_counter() - task_started) * 1000),
+                    log_id=log_id,
+                )
             if kind == "rejected":
                 LOG.warning("bootstrap rejected project=%s intent=%s worker=%s execute_ms=%s", project.project.id, intent.id, worker.name, execute_ms)
+                update_session_log(client, project.project.id, log_id, "rejected")
                 best_effort_release(client, project.project.id, intent.id, worker.name)
                 return "rejected"
-            return _write_bootstrap_complete_result(client, project.project.id, intent.id, worker.name, data["fact_description"], data["complete_description"], source="bootstrap", phase_ms=execute_ms, total_ms=int((time.perf_counter() - task_started) * 1000), session_id=first.session, prompt=prompt)
+            return _write_bootstrap_complete_result(
+                client, project.project.id, intent.id, worker.name,
+                data["fact_description"], data["complete_description"],
+                source="bootstrap", phase_ms=execute_ms,
+                total_ms=int((time.perf_counter() - task_started) * 1000),
+                session_id=session_id, prompt=prompt, log_id=log_id,
+            )
         if did_timeout(first):
-            LOG.warning("bootstrap timed out project=%s intent=%s worker=%s execute_ms=%s", project.project.id, intent.id, worker.name, execute_ms)
-            best_effort_release(client, project.project.id, intent.id, worker.name)
-            return "failed"
+            LOG.warning("bootstrap timed out project=%s intent=%s worker=%s execute_ms=%s — falling back to conclude", project.project.id, intent.id, worker.name, execute_ms)
+            return _run_bootstrap_conclude_direct(
+                config, client, driver, project, intent, worker,
+                session_id, lease, cancellation, prompt,
+                execute_ms=execute_ms, total_ms=int((time.perf_counter() - task_started) * 1000),
+                log_id=log_id,
+            )
         LOG.warning("bootstrap command failed project=%s intent=%s worker=%s code=%s execute_ms=%s", project.project.id, intent.id, worker.name, first.returncode, execute_ms)
+        update_session_log(client, project.project.id, log_id, "failed")
         best_effort_release(client, project.project.id, intent.id, worker.name)
         return "failed"
     except Exception:
@@ -216,6 +240,11 @@ def _run_bootstrap_container(
         )
         execute_ms = int((time.perf_counter() - execute_started) * 1000)
         session = driver.extract_session(session, first.stdout, first.stderr)
+        # Write running log as soon as session_id is known (container path)
+        log_id = record_session_log(
+            client, project.project.id, session, "bootstrap", worker.name,
+            prompt, intent_id=intent.id, status="running",
+        )
         cancelled = cancel_reason(first, cancellation)
         if cancelled is not None:
             LOG.info(
@@ -226,6 +255,7 @@ def _run_bootstrap_container(
                 cancelled,
                 execute_ms,
             )
+            update_session_log(client, project.project.id, log_id, "cancelled")
             best_effort_release(client, project.project.id, intent.id, worker.name)
             return "cancelled"
         if lease.failure is not None:
@@ -237,6 +267,7 @@ def _run_bootstrap_container(
                 lease.failure.status_code,
                 execute_ms,
             )
+            update_session_log(client, project.project.id, log_id, "failed")
             best_effort_release(client, project.project.id, intent.id, worker.name)
             return "failed"
         if not did_timeout(first) and first.returncode == 0:
@@ -279,6 +310,7 @@ def _run_bootstrap_container(
                     int((time.perf_counter() - task_started) * 1000),
                     preview(first.stdout),
                 )
+                update_session_log(client, project.project.id, log_id, "rejected")
                 best_effort_release(client, project.project.id, intent.id, worker.name)
                 return "rejected"
             return _write_bootstrap_complete_result(
@@ -293,6 +325,7 @@ def _run_bootstrap_container(
                 total_ms=int((time.perf_counter() - task_started) * 1000),
                 session_id=session,
                 prompt=prompt,
+                log_id=log_id,
             )
         if did_timeout(first):
             LOG.warning(
@@ -305,6 +338,7 @@ def _run_bootstrap_container(
                 preview(first.stdout),
                 preview(first.stderr),
             )
+            update_session_log(client, project.project.id, log_id, "timeout")
             return _try_conclude_fallback(
                 config,
                 client,
@@ -329,6 +363,7 @@ def _run_bootstrap_container(
             preview(first.stdout),
             preview(first.stderr),
         )
+        update_session_log(client, project.project.id, log_id, "failed")
         best_effort_release(client, project.project.id, intent.id, worker.name)
         return "failed"
     except Exception:
@@ -489,6 +524,123 @@ def _try_conclude_fallback(
     )
 
 
+def _run_bootstrap_conclude_direct(
+    config: DispatchConfig,
+    client: CairnClient,
+    driver: WorkerDriver,
+    project: ProjectDetail,
+    intent: Intent,
+    worker: WorkerConfig,
+    session_id: str | None,
+    lease: HeartbeatLease,
+    cancellation: TaskCancellation,
+    prompt: str,
+    *,
+    execute_ms: int,
+    total_ms: int,
+    log_id: str | None = None,
+) -> str:
+    """Conclude fallback for the direct-execution path.
+    
+    When bootstrap parse fails or times out, send the ``bootstrap_conclude.md``
+    prompt as a follow-up message in the same session to extract a fact.
+    Mirrors how ``_try_conclude_fallback`` works for the container path.
+    """
+    pid = project.project.id
+    if not driver.supports_conclude() or not session_id:
+        LOG.info(
+            "bootstrap conclude fallback unavailable (direct) project=%s intent=%s worker=%s supports_conclude=%s has_session=%s",
+            pid, intent.id, worker.name,
+            driver.supports_conclude(), bool(session_id),
+        )
+        update_session_log(client, pid, log_id, "failed")
+        best_effort_release(client, pid, intent.id, worker.name)
+        return "failed"
+    if lease.failure is not None:
+        LOG.warning(
+            "bootstrap conclude fallback skipped (direct) because heartbeat already lost project=%s intent=%s worker=%s",
+            pid, intent.id, worker.name,
+        )
+        update_session_log(client, pid, log_id, "failed")
+        best_effort_release(client, pid, intent.id, worker.name)
+        return "failed"
+    if cancellation.is_cancelled:
+        LOG.info(
+            "bootstrap conclude fallback skipped (direct) because task was cancelled project=%s intent=%s worker=%s reason=%s",
+            pid, intent.id, worker.name, cancellation.reason,
+        )
+        best_effort_release(client, pid, intent.id, worker.name)
+        return "cancelled"
+
+    if not project_allows_conclude_fallback(
+        client, pid,
+        worker_name=worker.name, intent_id=intent.id,
+    ):
+        update_session_log(client, pid, log_id, "failed")
+        best_effort_release(client, pid, intent.id, worker.name)
+        return "failed"
+
+    conclude_prompt = render_prompt(
+        load_prompt(config.runtime.prompt_group, "bootstrap_conclude.md"),
+        _bootstrap_prompt_replacements(project),
+    )
+    LOG.info("starting bootstrap conclude fallback (direct) project=%s intent=%s worker=%s session=%s", pid, intent.id, worker.name, session_id)
+    conclude_started = time.perf_counter()
+    try:
+        result = driver.conclude_direct(
+            worker,
+            conclude_prompt,
+            session_id,
+            phase="bootstrap_conclude",
+            timeout_seconds=config.tasks.bootstrap.conclude_timeout,
+            cancellation=cancellation,
+        )
+    except Exception as exc:
+        LOG.exception("bootstrap conclude fallback crashed (direct) project=%s intent=%s worker=%s", pid, intent.id, worker.name)
+        update_session_log(client, pid, log_id, "failed")
+        best_effort_release(client, pid, intent.id, worker.name)
+        return "failed"
+
+    conclude_ms = int((time.perf_counter() - conclude_started) * 1000)
+    cancelled = cancel_reason(result, cancellation)
+    if cancelled is not None:
+        LOG.info("bootstrap conclude cancelled (direct) project=%s intent=%s worker=%s reason=%s conclude_ms=%s", pid, intent.id, worker.name, cancelled, conclude_ms)
+        best_effort_release(client, pid, intent.id, worker.name)
+        return "cancelled"
+    if lease.failure is not None:
+        update_session_log(client, pid, log_id, "failed")
+        best_effort_release(client, pid, intent.id, worker.name)
+        return "failed"
+    if result.timed_out or result.returncode != 0:
+        LOG.warning("bootstrap conclude failed (direct) project=%s intent=%s worker=%s code=%s timed_out=%s conclude_ms=%s", pid, intent.id, worker.name, result.returncode, result.timed_out, conclude_ms)
+        update_session_log(client, pid, log_id, "failed")
+        best_effort_release(client, pid, intent.id, worker.name)
+        return "failed"
+    try:
+        model_output = driver.extract_response_text(result.stdout, result.stderr)
+        payload = parse_json_output(model_output)
+        conclude_data = payload.get("data") if isinstance(payload.get("data"), dict) else payload
+        if isinstance(conclude_data, dict) and isinstance(conclude_data.get("complete"), dict):
+            LOG.warning("bootstrap conclude returned unexpected complete payload (direct) project=%s intent=%s worker=%s complete_preview=%s", pid, intent.id, worker.name, preview(str(conclude_data.get("complete"))))
+        kind, fact_description = validate_bootstrap_conclude_payload(payload)
+    except Exception as exc:
+        LOG.warning("bootstrap conclude parse failed (direct) project=%s intent=%s worker=%s error=%s conclude_ms=%s", pid, intent.id, worker.name, exc, conclude_ms)
+        update_session_log(client, pid, log_id, "failed")
+        best_effort_release(client, pid, intent.id, worker.name)
+        return "failed"
+    if kind == "rejected":
+        LOG.warning("bootstrap conclude rejected (direct) project=%s intent=%s worker=%s conclude_ms=%s", pid, intent.id, worker.name, conclude_ms)
+        best_effort_release(client, pid, intent.id, worker.name)
+        return "rejected"
+    update_session_log(client, pid, log_id, "success")
+    return write_conclude_result(
+        client, pid, intent.id, worker.name,
+        fact_description,
+        source="bootstrap_conclude",
+        phase_ms=conclude_ms,
+    )
+
+
 def _bootstrap_prompt_replacements(project: ProjectDetail) -> dict[str, str]:
     facts = {fact.id: fact.description for fact in project.facts}
     hints = [
@@ -520,6 +672,7 @@ def _write_bootstrap_complete_result(
     total_ms: int | None = None,
     session_id: str | None = None,
     prompt: str | None = None,
+    log_id: str | None = None,
 ) -> str:
     conclude = write_conclude_result_with_fact_id(
         client,
@@ -532,24 +685,14 @@ def _write_bootstrap_complete_result(
         total_ms=total_ms,
     )
     if conclude.status != "success":
-        record_session_log(
-            client, project_id, session_id, "bootstrap", worker_name,
-            prompt or "", intent_id=intent_id, status="failed",
-        )
+        update_session_log(client, project_id, log_id, "failed")
         return "failed"
     if conclude.fact_id is None:
         LOG.warning(
             "bootstrap complete deferred because conclude response omitted fact id project=%s intent=%s worker=%s source=%s",
-            project_id,
-            intent_id,
-            worker_name,
-            source,
+            project_id, intent_id, worker_name, source,
         )
-        record_session_log(
-            client, project_id, session_id, "bootstrap", worker_name,
-            prompt or "", intent_id=intent_id, status="success",
-            fact_ids=[],
-        )
+        update_session_log(client, project_id, log_id, "success")
         return "success"
 
     fact_ids = [conclude.fact_id]
@@ -557,60 +700,26 @@ def _write_bootstrap_complete_result(
     if response.status_code in (403, 409):
         LOG.info(
             "bootstrap complete deferred project=%s intent=%s worker=%s source=%s status=%s fact_id=%s",
-            project_id,
-            intent_id,
-            worker_name,
-            source,
-            response.status_code,
-            conclude.fact_id,
+            project_id, intent_id, worker_name, source, response.status_code, conclude.fact_id,
         )
-        record_session_log(
-            client, project_id, session_id, "bootstrap", worker_name,
-            prompt or "", intent_id=intent_id, status="success",
-            fact_ids=fact_ids,
-        )
+        update_session_log(client, project_id, log_id, "success")
         return "success"
     if not response.ok:
         LOG.warning(
             "bootstrap complete write failed project=%s intent=%s worker=%s source=%s fact_id=%s status=%s body=%s",
-            project_id,
-            intent_id,
-            worker_name,
-            source,
-            conclude.fact_id,
-            response.status_code,
-            response.text,
+            project_id, intent_id, worker_name, source, conclude.fact_id, response.status_code, response.text,
         )
-        record_session_log(
-            client, project_id, session_id, "bootstrap", worker_name,
-            prompt or "", intent_id=intent_id, status="success",
-            fact_ids=fact_ids,
-        )
+        update_session_log(client, project_id, log_id, "success")
         return "success"
     if total_ms is None:
         LOG.info(
             "bootstrap completed project=%s intent=%s worker=%s source=%s from=%s phase_ms=%s",
-            project_id,
-            intent_id,
-            worker_name,
-            source,
-            [conclude.fact_id],
-            phase_ms,
+            project_id, intent_id, worker_name, source, [conclude.fact_id], phase_ms,
         )
     else:
         LOG.info(
             "bootstrap completed project=%s intent=%s worker=%s source=%s from=%s phase_ms=%s total_ms=%s",
-            project_id,
-            intent_id,
-            worker_name,
-            source,
-            [conclude.fact_id],
-            phase_ms,
-            total_ms,
+            project_id, intent_id, worker_name, source, [conclude.fact_id], phase_ms, total_ms,
         )
-    record_session_log(
-        client, project_id, session_id, "bootstrap", worker_name,
-        prompt or "", intent_id=intent_id, status="success",
-        fact_ids=fact_ids,
-    )
+    update_session_log(client, project_id, log_id, "success")
     return "success"

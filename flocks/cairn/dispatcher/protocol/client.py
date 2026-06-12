@@ -46,6 +46,7 @@ from flocks.cairn.storage import (
     next_intent_id,
     project_meta_from_row,
     project_reason_from_row,
+    update_session_log_status,
     utcnow,
     validate_facts_exist,
     validate_goal_not_in_sources,
@@ -506,6 +507,17 @@ class CairnClient:
             return ApiResult(status_code=exc.status_code, text=exc.detail)
         except Exception as exc:
             LOG.warning("create_session_log failed project=%s error=%s", project_id, exc)
+            return ApiResult(status_code=0, text=str(exc))
+
+    def update_session_log(self, project_id: str, log_id: str, status: str) -> ApiResult:
+        try:
+            with get_conn() as conn:
+                update_session_log_status(conn, log_id, status)
+                return ApiResult(status_code=200, data={"id": log_id, "status": status})
+        except HTTPException as exc:
+            return ApiResult(status_code=exc.status_code, text=exc.detail)
+        except Exception as exc:
+            LOG.warning("update_session_log failed project=%s log_id=%s error=%s", project_id, log_id, exc)
             return ApiResult(status_code=0, text=str(exc))
 
     def link_session_facts(
